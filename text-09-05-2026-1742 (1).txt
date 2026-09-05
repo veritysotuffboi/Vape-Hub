@@ -347,6 +347,7 @@ local function GetTool(name)
     return bp and bp:FindFirstChild(name) or (char() and char():FindFirstChild(name))
 end
 
+-- PATCH: GetGun now restores position AFTER the wait, not before
 local function GetGun(name)
     for _,spawner in ipairs(Workspace:GetDescendants()) do
         if (spawner:IsA("Model") or spawner:IsA("BasePart")) and spawner:GetAttribute("ToolName")==name then
@@ -358,7 +359,7 @@ local function GetGun(name)
                 task.wait(0.25)
                 if GiverRemote then pcall(function() GiverRemote:FireServer(spawner) end) end
                 if InteractItem then pcall(function() InteractItem:InvokeServer(part) end) end
-                task.wait(0.15)
+                task.wait(0.25) -- wait for server to grant before restoring
                 pcall(function() r.CFrame=save end)
                 return
             end
@@ -384,6 +385,7 @@ local function startKeycard()
                         pcall(function() r.CFrame=CFrame.new(pp.Position+Vector3.new(0,2,0)) end)
                         task.wait(0.2)
                         if GiverRemote then pcall(function() GiverRemote:FireServer(v) end) end
+                        task.wait(0.1)
                         pcall(function() r.CFrame=save end)
                     end
                 end
@@ -424,10 +426,26 @@ local function setupAutoEscape()
 end
 
 local doRage
+
+-- PATCH: fireClick now actually simulates a mouse click via VirtualInputManager or mouse object
 local function fireClick()
     pcall(function()
-        local m=LocalPlayer:GetMouse()
-        m.Button1Down:Connect(function() end)
+        local m = LocalPlayer:GetMouse()
+        -- try VIM first (works in most executors), fall back to mouse event
+        local ok = pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            vim:SendMouseButtonEvent(m.X, m.Y, 0, true, game, 0)
+            task.wait(0.05)
+            vim:SendMouseButtonEvent(m.X, m.Y, 0, false, game, 0)
+        end)
+        if not ok then
+            -- executor fallback: fire via tool's activated signal if we have a gun equipped
+            local c = char()
+            local tool = c and c:FindFirstChildWhichIsA("Tool")
+            if tool and tool.Activated then
+                pcall(function() tool.Activated:Fire() end)
+            end
+        end
     end)
 end
 
@@ -489,6 +507,22 @@ end
 
 local healthConn
 local lastDeathCF=nil
+
+-- PATCH: restoreSpeed no longer infinitely self-spawns; uses a Heartbeat connection instead
+local speedConn = nil
+local function startSpeedLoop()
+    if speedConn then return end
+    speedConn = RunService.Heartbeat:Connect(function()
+        if not attached then return end
+        local h = hum()
+        if h then
+            if F.Mov.Speed then h.WalkSpeed = F.Mov.SpeedV end
+            if F.Mov.JumpOn then h.UseJumpPower = true; h.JumpPower = F.Mov.JumpV end
+        end
+    end)
+    conns[#conns+1] = speedConn
+end
+
 bind(Players.LocalPlayer.CharacterAdded,function(c)
     clearNoclip()
     if F.Mov.Noclip then task.wait(0.5); applyNoclip() end
@@ -496,7 +530,7 @@ bind(Players.LocalPlayer.CharacterAdded,function(c)
     stopCarFly()
     local charHum=c:WaitForChild("Humanoid",5)
     if not charHum then return end
-    local ws=charHum.WalkSpeed; local jp=charHum.JumpPower
+
     local function fixTools()
         local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
         if not bp then return end
@@ -515,11 +549,7 @@ bind(Players.LocalPlayer.CharacterAdded,function(c)
             end
         end
     end
-    local function restoreSpeed(w,j)
-        local hh=hum()
-        if hh then hh.PlatformStand=false; hh.Sit=false; task.wait(); hh.WalkSpeed=w; hh.JumpPower=j end
-        fixTools(); task.delay(0.2,fixTools); task.spawn(restoreSpeed,w,j)
-    end
+
     charHum.Died:Connect(function()
         if F.Auto.AutoRespawn then
             local r=root(); if r then lastDeathCF=r.CFrame end
@@ -529,7 +559,12 @@ bind(Players.LocalPlayer.CharacterAdded,function(c)
         task.wait(12)
         local r=root(); if r then r.CFrame=lastDeathCF end
     end
+
+    fixTools(); task.delay(0.2,fixTools)
 end)
+
+-- start the speed/jump heartbeat loop once
+startSpeedLoop()
 
 local plTarget, plFollow, spectating, spectateTarget=nil,false,false,nil
 local function stopSpectate() spectating=false; spectateTarget=nil; local mh=hum(); if mh then pcall(function() cam().CameraSubject=mh end) end end
@@ -616,19 +651,18 @@ local function stopAntiFling()
     antiFlingModified={}
 end
 
--- AntiKillPlane
+-- PATCH: AntiKillPlane void threshold fixed from -10 to -75 (Prison Life's actual void)
 local antiKPConn=nil
 local function startAntiKillPlane()
     antiKPConn=vapeClean(RunService.Heartbeat:Connect(function()
         if isAlive() then
             local r=getRoot(); if not r then return end
-            local diff=math.clamp(r.Position.Y,-10,179.99)-r.Position.Y
-            pcall(function()
-                r.CFrame+=Vector3.new(0,diff,0)
-                if math.abs(diff)>0 and r.AssemblyLinearVelocity.Y>0 then
-                    r.AssemblyLinearVelocity*=Vector3.new(1,0,1)
-                end
-            end)
+            if r.Position.Y < -75 then
+                pcall(function()
+                    r.CFrame = CFrame.new(r.Position.X, 100, r.Position.Z)
+                    r.AssemblyLinearVelocity = Vector3.new(r.AssemblyLinearVelocity.X, 0, r.AssemblyLinearVelocity.Z)
+                end)
+            end
         end
     end))
 end
@@ -711,10 +745,8 @@ local function startVehicleSpeed()
     end)
 end
 
--- VehicleWallbang
 local function applyVehicleWallbang(on)
     pcall(function()
-        local shootParams=debug.getupvalue and debug.getupvalue(function() end,1)
         if on and Workspace:FindFirstChild("CarContainer") then
             for _,part in ipairs(Workspace.CarContainer:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -725,7 +757,25 @@ local function applyVehicleWallbang(on)
     end)
 end
 
--- Killaura
+-- PATCH: Killaura remote path — search for melee remote dynamically
+local function findMeleeRemote()
+    -- Prison Life melee event locations to try in order
+    local candidates = {
+        function() return RS:FindFirstChild("meleeEvent") end,
+        function() return RS.Remotes and RS.Remotes:FindFirstChild("MeleeHit") end,
+        function() return RS.Remotes and RS.Remotes:FindFirstChild("Melee") end,
+        function()
+            for _,v in ipairs(RS:GetDescendants()) do
+                if v:IsA("RemoteEvent") and v.Name:lower():find("melee") then return v end
+            end
+        end,
+    }
+    for _,fn in ipairs(candidates) do
+        local ok,r = pcall(fn); if ok and r then return r end
+    end
+    return nil
+end
+
 local killauraThread=nil
 local function startKillaura()
     killauraThread=vapeSpawn(function()
@@ -737,6 +787,7 @@ local function startKillaura()
                     local entities=getEntityList()
                     local attacked=0
                     local facing=r.CFrame.LookVector*Vector3.new(1,0,1)
+                    local meleeRemote = findMeleeRemote()
                     for _,ent in ipairs(entities) do
                         if not ent.Targetable then continue end
                         local ep=ent.RootPart
@@ -744,12 +795,15 @@ local function startKillaura()
                         local dist=(ep.Position-selfpos).Magnitude
                         if dist>F.VapeM.KillauraRange then continue end
                         local delta=(ep.Position-selfpos)
-                        local angle=math.acos(math.clamp(facing:Dot((delta*Vector3.new(1,0,1)).Unit),-1,1))
+                        local flatDelta = delta * Vector3.new(1,0,1)
+                        local angle = flatDelta.Magnitude > 0
+                            and math.acos(math.clamp(facing:Dot(flatDelta.Unit),-1,1))
+                            or 0
                         if angle>(math.rad(F.VapeM.KillauraAngle)/2) then continue end
                         if attacked>=F.VapeM.KillauraMax then break end
-                        pcall(function()
-                            RS.meleeEvent:FireServer(ent.Player,1,1)
-                        end)
+                        if meleeRemote then
+                            pcall(function() meleeRemote:FireServer(ent.Player,1,1) end)
+                        end
                         attacked+=1
                     end
                 end
@@ -759,7 +813,23 @@ local function startKillaura()
     end)
 end
 
--- AutoArrest
+-- PATCH: AutoArrest remote lookup hardened
+local function findArrestRemote()
+    local candidates = {
+        function() return RS.Remotes and RS.Remotes:FindFirstChild("ArrestPlayer") end,
+        function() return RS.Remotes and RS.Remotes:FindFirstChild("Arrest") end,
+        function()
+            for _,v in ipairs(RS:GetDescendants()) do
+                if (v:IsA("RemoteFunction") or v:IsA("RemoteEvent")) and v.Name:lower():find("arrest") then return v end
+            end
+        end,
+    }
+    for _,fn in ipairs(candidates) do
+        local ok,r = pcall(fn); if ok and r then return r end
+    end
+    return nil
+end
+
 local autoArrestThread=nil
 local arrestCooldown=0
 local function startAutoArrest()
@@ -769,19 +839,26 @@ local function startAutoArrest()
                 local entities=getEntityList()
                 local r=getRoot()
                 if r then
+                    local arrestRemote = findArrestRemote()
                     for _,ent in ipairs(entities) do
                         local ep=ent.RootPart
                         if ep and (ep.Position-r.Position).Magnitude<=F.VapeM.KillauraRange then
                             if not ent.Character:GetAttribute("Arrested") then
-                                pcall(function()
-                                    if RS.Remotes:FindFirstChild("ArrestPlayer") then
-                                        local ok=RS.Remotes.ArrestPlayer:InvokeServer(ent.Player,1)
+                                if arrestRemote then
+                                    pcall(function()
+                                        local ok
+                                        if arrestRemote:IsA("RemoteFunction") then
+                                            ok = arrestRemote:InvokeServer(ent.Player, 1)
+                                        else
+                                            arrestRemote:FireServer(ent.Player, 1)
+                                            ok = true
+                                        end
                                         if ok then
                                             arrestCooldown=os.clock()+7
                                             Notify("AutoArrest: Arrested "..ent.Player.Name, 5)
                                         end
-                                    end
-                                end)
+                                    end)
+                                end
                                 break
                             end
                         end
@@ -820,7 +897,6 @@ end
 local autoResetConn=nil
 local function startAutoReset()
     autoResetConn=vapeClean(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-        local t=getTeams()
         if LocalPlayer.Team and LocalPlayer.Team.Name:lower():find("crim") and isAlive() then
             local h=hum()
             if h then h:ChangeState(Enum.HumanoidStateType.Dead) end
@@ -828,21 +904,37 @@ local function startAutoReset()
     end))
 end
 
--- AutoReload
+-- PATCH: AutoReload gui path search is retried and uses FindFirstChild recursively rather than chained WaitForChild
 local autoReloadConn=nil
 local function startAutoReload()
-    pcall(function()
-        local gui=LocalPlayer.PlayerGui:WaitForChild("Home",5)
-        if not gui then return end
-        local bulletsLabel=gui:FindFirstChild("hud",true) and gui.hud:FindFirstChild("BulletsLabel",true)
+    task.spawn(function()
+        -- retry up to 10s for the gui to appear
+        local gui2 = nil
+        for _=1,20 do
+            gui2 = LocalPlayer.PlayerGui:FindFirstChild("Home", true)
+            if gui2 then break end
+            task.wait(0.5)
+        end
+        if not gui2 then return end
+
+        local bulletsLabel = nil
+        for _=1,20 do
+            bulletsLabel = gui2:FindFirstChild("BulletsLabel", true)
+            if bulletsLabel then break end
+            task.wait(0.5)
+        end
         if not bulletsLabel then return end
+
         autoReloadConn=vapeClean(bulletsLabel:GetPropertyChangedSignal("Text"):Connect(function()
             pcall(function()
                 local tool=char() and char():FindFirstChildWhichIsA("Tool")
                 if tool and (tool:GetAttribute("Local_CurrentAmmo") or 1)<=0 then
-                    if RS:FindFirstChild("GunRemotes") then
-                        RS.GunRemotes.Reload:FireServer()
-                    end
+                    -- try both known remote paths
+                    pcall(function()
+                        if RS:FindFirstChild("GunRemotes") and RS.GunRemotes:FindFirstChild("Reload") then
+                            RS.GunRemotes.Reload:FireServer()
+                        end
+                    end)
                     if F.VapeM.AutoReloadHotSwap then
                         local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
                         if bp then
@@ -887,7 +979,7 @@ local function startAutoArmor()
     end)
 end
 
--- AutoHeal
+-- PATCH: AutoHeal no longer writes Quantity attribute client-side; just fires the remote
 local autoHealThread=nil
 local healItems={Breakfast=true,Lunch=true,Dinner=true}
 local function startAutoHeal()
@@ -903,9 +995,11 @@ local function startAutoHeal()
                                 if (os.clock()-(tool:GetAttribute("Client_LastConsumedAt") or 0))>=3 then
                                     pcall(function()
                                         h:EquipTool(tool)
-                                        tool:SetAttribute("Quantity",(tool:GetAttribute("Quantity") or 1)-1)
-                                        tool:SetAttribute("Client_LastConsumedAt",os.clock())
-                                        RS.Remotes.EatFood:FireServer()
+                                        tool:SetAttribute("Client_LastConsumedAt", os.clock())
+                                        -- fire the server remote; don't touch Quantity (server owns that)
+                                        if RS.Remotes and RS.Remotes:FindFirstChild("EatFood") then
+                                            RS.Remotes.EatFood:FireServer()
+                                        end
                                         Notify("AutoHeal: used "..tool.Name, 2)
                                     end)
                                     break
@@ -963,7 +1057,9 @@ end
 -- KillNotifications
 local killNotifConn=nil
 local function startKillNotifications()
-    killNotifConn=vapeClean(RS.Killfeed.ChildAdded:Connect(function(obj)
+    local killfeed = RS:FindFirstChild("Killfeed")
+    if not killfeed then return end
+    killNotifConn=vapeClean(killfeed.ChildAdded:Connect(function(obj)
         pcall(function()
             local names={}
             local start=obj.Name:find("@"); local endchar=obj.Name:find(")")
@@ -1027,7 +1123,11 @@ local function startAutoDetonate()
                         if tool then
                             local h=hum()
                             if h then h:EquipTool(tool) end
-                            pcall(function() RS.Remotes.C4.ActivateC4:InvokeServer() end)
+                            pcall(function()
+                                if RS.Remotes and RS.Remotes:FindFirstChild("C4") then
+                                    RS.Remotes.C4.ActivateC4:InvokeServer()
+                                end
+                            end)
                         end
                     end
                 end
@@ -1037,7 +1137,7 @@ local function startAutoDetonate()
     end)
 end
 
--- Disabler (Head collision fix)
+-- Disabler
 local disablerConn=nil
 local function startDisabler()
     local function fix(c)
@@ -1055,7 +1155,6 @@ end
 local function stopDisabler() if disablerConn then pcall(function() disablerConn:Disconnect() end); disablerConn=nil end end
 
 -- GunModifications
-local gunModOld=nil
 local function applyGunMods()
     pcall(function()
         if not F.VapeM.GunMods then return end
@@ -1861,6 +1960,7 @@ bind(RunService.Heartbeat,function(dt)
     if F.Auto.TDoors then TransparentDoors(true) end
     if F.Auto.Guns and not _autoGunRunning and root() then
         if os.clock()-_autoGunLst >= AUTOGUN_DELAY then
+            _autoGunLst = os.clock()
             _autoGunRunning=true
             local r=root(); local save=r and r.CFrame
             task.spawn(function()
@@ -1873,6 +1973,7 @@ bind(RunService.Heartbeat,function(dt)
         end
     end
 
+    -- PATCH: VehicleFly unseat-safe — nudge via AssemblyLinearVelocity only, don't CFrame while seated
     if F.VapeM.VehicleFly then
         pcall(function()
             local h=hum()
@@ -1888,8 +1989,12 @@ bind(RunService.Heartbeat,function(dt)
                     if key(Enum.KeyCode.D) then md+=c2.RightVector end
                     md+=Vector3.new(0,vfUp+vfDown,0)
                     if md.Magnitude>0 then
-                        r.AssemblyLinearVelocity=Vector3.new(0,2.25,0)
-                        r.CFrame=CFrame.lookAlong(r.Position,c2.LookVector)+(md.Unit*F.VapeM.VehicleFlySpeed*dt)
+                        -- use velocity on the seat's vehicle body, not CFrame on HRP
+                        local vehicle = seat:FindFirstAncestorWhichIsA("Model")
+                        local pp = vehicle and (vehicle.PrimaryPart or seat)
+                        if pp then
+                            pp.AssemblyLinearVelocity = md.Unit * F.VapeM.VehicleFlySpeed
+                        end
                     end
                 end
             end
@@ -1922,10 +2027,7 @@ bind(RunService.RenderStepped,function(dt)
     end
     if not attached then if fovCircle then fovCircle.Visible=false end; return end
     local h,r=hum(),root()
-    if h then
-        if F.Mov.Speed then h.WalkSpeed=F.Mov.SpeedV end
-        if F.Mov.JumpOn then h.UseJumpPower=true; h.JumpPower=F.Mov.JumpV end
-    end
+    -- speed/jump now handled by startSpeedLoop heartbeat conn, not here
     if F.Mov.Fly and r then
         local c2=cam().CFrame; local d=Vector3.zero
         if key(Enum.KeyCode.W) then d+=c2.LookVector end
@@ -1993,4 +2095,4 @@ Hub.Aim=Aim
 setupAutoEscape()
 if F.Auto.Keycard then startKeycard() end
 
-warn("[syntax + vape] loaded — Right Shift toggles UI · T=click-TP · Vape modules: Anti / Combat / Vehicle / Inventory / Utility tabs active")
+warn("[syntax + vape] loaded — Right Shift toggles UI · T=click-TP · Vape modules active")
