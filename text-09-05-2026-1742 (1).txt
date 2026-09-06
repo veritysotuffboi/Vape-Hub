@@ -9,20 +9,16 @@ local RS         = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local Teams      = game:GetService("Teams")
 local TweenSvc   = game:GetService("TweenService")
-local CollectionService = game:GetService("CollectionService")
-local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 
 if getgenv then
-    if getgenv().vapehub then pcall(function() getgenv().vapehub._unload() end) end
+    if getgenv().syntax then pcall(function() getgenv().syntax._unload() end) end
 end
-local Hub = {}; if getgenv then getgenv().vapehub = Hub end
-
-local cloneref = cloneref or function(obj) return obj end
+local Hub = {}; if getgenv then getgenv().syntax = Hub end
 
 local F = {
-    Aim = { On=false, Held=false, Part="Head", TeamCheck=true, WallCheck=false, Smooth=0.20, FOV=120, ShowFOV=true, Predict=0.0, Trigger=false, TrigDelay=60, Silent=false, Fire=false },
+    Aim = { On=false, Held=false, Part="Head", TeamCheck=true, WallCheck=false, Smooth=0.20, FOV=120, ShowFOV=true, Predict=0.0, Trigger=false, TrigDelay=60, Silent=false, Fire=false, HitChance=85, HeadshotChance=65 },
     ESP = { On=false, Box=true, Filled=false, Name=true, Dist=true, Health=true, Tracer=false, Skeleton=false, EnemiesOnly=false },
     Mov = { Speed=false, SpeedV=50, JumpOn=false, JumpV=80, Fly=false, FlyV=2.5, FlyNoclip=false, Noclip=false, InfJump=false, CarFly=false, CarFlySpeed=120, Spin=false, SpinV=5, NcGlitch=false },
     Wld = { Fullbright=false, NoFog=false, FOV=70, AntiAFK=false },
@@ -31,23 +27,17 @@ local F = {
     Prot= { AntiArrest=false, AntiTase=true, EnableReset=true, AntiVoid=true },
     Feed= { Kill=true, Hostile=true },
     Auto= { Guns=false, GunList={}, Toilets=false, Keycard=true, Doors=false, TDoors=false, AJR=true, AutoRespawn=false, FastGuns=false, FireRate=0, OldSounds=true, OldSoundsMe=false },
-    VapeM = {
-        AntiFling=false, AntiInvisible=false, AntiKillPlane=false, AntiRiotShield=false, AntiTaze=false,
-        AutoArrest=false, AutoReset=false, AutoTaze=false, FenceGodmode=false,
-        GunMods=false, GunModsNoSpread=false, GunModsAutomatic=false, GunModsFireRate=100,
-        Killaura=false, KillauraRange=12, KillauraAngle=360, KillauraMax=10,
-        NoJumpCooldown=false, VehicleFly=false, VehicleFlySpeed=60, VehicleSpeed=false, VehicleSpeedV=140,
-        VehicleWallbang=false, SilentAim=false, SilentAimRange=150, SilentAimHitChance=85,
-        SilentAimHeadshotChance=65, SilentAimAutoFire=false, SilentAimWallbang=false,
-        TriggerBot=false, AutoArmor=false, AutoHeal=false, AutoHotbar=false, AutoPickup=false,
-        BulletTracers=false, Crosshair=false, DamageIndicator=false, HitSound=false, KillSound=false,
-        Viewmodel=false, C4ESP=false, CameraPhase=false, KillNotifications=false,
-        AutoDetonate=false, AutoReload=false, AutoReloadHotSwap=false, AutoToxic=false,
-        CheatDetector=false, Disabler=false
-    }
+    KA  = { On=false, Range=12, MaxTargets=10, Angle=360, RequireMouse=false },
+    TB  = { On=false },
+    AA  = { On=false, Range=8, HandCheck=true, InmatesEnabled=true, CriminalsEnabled=true },
+    AT  = { On=false },
+    DIS = { On=false },
+    GM  = { On=false, FireRate=100, NoSpread=false, FullAuto=false },
+    VWB = { On=false },
 }
 Hub.F = F
 
+local aa_wl = {}
 local attached = true
 local conns = {}
 local function bind(s, f) local c = s:Connect(f); conns[#conns+1] = c; return c end
@@ -62,7 +52,7 @@ local function aimOrigin() return UIS:GetMouseLocation() end
 
 local function Notify(text, dur)
     pcall(function()
-        StarterGui:SetCore("SendNotification", { Title="Vape Hub V2"; Text=text; Duration=dur or 3 })
+        StarterGui:SetCore("SendNotification", { Title="syntax"; Text=text; Duration=dur or 3 })
     end)
 end
 
@@ -79,10 +69,11 @@ end
 
 local fakeFloor = nil
 local fakeFloorUsers = 0
+
 local function spawnFakeFloor()
     if fakeFloor and fakeFloor.Parent then return end
     local p = Instance.new("Part")
-    p.Name="VapeHubFloor"; p.Size=Vector3.new(10,1,10); p.Anchored=true
+    p.Name="SyntaxFloor"; p.Size=Vector3.new(10,1,10); p.Anchored=true
     p.CanCollide=true; p.Transparency=1; p.CastShadow=false
     p.CanQuery=false; p.CanTouch=false; p.Parent=Workspace
     fakeFloor = p
@@ -96,6 +87,7 @@ local function tickFakeFloor() local r=root(); if fakeFloor and fakeFloor.Parent
 
 local _noclipTemp = false
 local _noclipTempConns = {}
+
 local function tempNoclipOn()
     if _noclipTemp then return end; _noclipTemp=true
     local c=char(); if not c then return end
@@ -138,6 +130,7 @@ local function tpInstant(cf) local r=root(); if r and cf then r.CFrame=cf end en
 
 local noclipConns = {}
 local CharacterCollision = RS.Scripts and RS.Scripts:FindFirstChild("CharacterCollision")
+
 local function clearNoclip()
     for _,c in ipairs(noclipConns) do pcall(function() c:Disconnect() end) end; noclipConns={}
 end
@@ -163,15 +156,15 @@ end
 
 local function applySpin()
     local r=root(); if not r then return end
-    for _,v in ipairs(r:GetChildren()) do if v.Name=="vapehub_spin" then v:Destroy() end end
+    for _,v in ipairs(r:GetChildren()) do if v.Name=="syntax_spin" then v:Destroy() end end
     if not F.Mov.Spin then return end
     local bav=Instance.new("BodyAngularVelocity")
-    bav.Name="vapehub_spin"; bav.MaxTorque=Vector3.new(0,math.huge,0)
+    bav.Name="syntax_spin"; bav.MaxTorque=Vector3.new(0,math.huge,0)
     bav.AngularVelocity=Vector3.new(0,F.Mov.SpinV*10,0); bav.Parent=r
 end
 local function stopSpin()
     local r=root(); if not r then return end
-    for _,v in ipairs(r:GetChildren()) do if v.Name=="vapehub_spin" then v:Destroy() end end
+    for _,v in ipairs(r:GetChildren()) do if v.Name=="syntax_spin" then v:Destroy() end end
 end
 
 local snacks = {"Chips","Chocolate","Soda"}
@@ -208,1522 +201,783 @@ local function setupCarFly()
     local bv=Instance.new("BodyVelocity"); bv.MaxForce=Vector3.new(1e9,1e9,1e9); bv.Velocity=Vector3.zero; bv.Parent=pp; table.insert(carFlyObjects,bv)
     local bg=Instance.new("BodyGyro"); bg.MaxTorque=Vector3.new(1e9,1e9,1e9); bg.D=500; bg.P=1e5; bg.CFrame=pp.CFrame; bg.Parent=pp; table.insert(carFlyObjects,bg)
     for _,v in ipairs(vehicle:GetDescendants()) do
-        if v:IsA("BasePart") then
-            local nc=v:GetPropertyChangedSignal("CanCollide"):Connect(function() v.CanCollide=false end)
-            table.insert(carFlyObjects,nc)
+        if v:IsA("BasePart") and v~=pp then
+            local w=Instance.new("WeldConstraint"); w.Part0=pp; w.Part1=v; w.Parent=pp; table.insert(carFlyObjects,w)
         end
     end
-    carFlyConn=RunService.Heartbeat:Connect(function(dt)
-        if not F.Mov.CarFly or not pp or not pp.Parent then stopCarFly(); return end
-        local c2=cam().CFrame
+    carFlyConn=RunService.RenderStepped:Connect(function()
+        local veh=GetSeatVehicle()
+        if not F.Mov.CarFly or not veh or veh~=vehicle then stopCarFly(); return end
         local md=Vector3.zero
-        if key(Enum.KeyCode.W) then md+=c2.LookVector end
-        if key(Enum.KeyCode.S) then md-=c2.LookVector end
-        if key(Enum.KeyCode.A) then md-=c2.RightVector end
-        if key(Enum.KeyCode.D) then md+=c2.RightVector end
+        if key(Enum.KeyCode.W) then md+=cam().CFrame.LookVector end
+        if key(Enum.KeyCode.S) then md-=cam().CFrame.LookVector end
+        if key(Enum.KeyCode.A) then md-=cam().CFrame.RightVector end
+        if key(Enum.KeyCode.D) then md+=cam().CFrame.RightVector end
         if key(Enum.KeyCode.Space) then md+=Vector3.new(0,1,0) end
         if key(Enum.KeyCode.LeftControl) then md-=Vector3.new(0,1,0) end
-        if md.Magnitude>0 then bv.Velocity=md.Unit*F.Mov.CarFlySpeed else bv.Velocity=Vector3.zero end
-        local _,yaw,_=c2:ToEulerAnglesYXZ()
+        if md.Magnitude>0 then md=md.Unit end
+        bv.Velocity=md*F.Mov.CarFlySpeed
+        local _,yaw,_=cam().CFrame:ToEulerAnglesYXZ()
         bg.CFrame=CFrame.new(pp.Position)*CFrame.Angles(0,yaw,0)
     end)
 end
 
+local fbState
 local function fullbright(on)
-    pcall(function()
-        Lighting.Brightness=on and 2 or 1
-        Lighting.ClockTime=on and 14 or 14
-        Lighting.FogEnd=on and 1e9 or 100000
-        Lighting.GlobalShadows=not on
-        Lighting.Ambient=on and Color3.new(1,1,1) or Color3.new(0.5,0.5,0.5)
-        Lighting.OutdoorAmbient=on and Color3.new(1,1,1) or Color3.new(0.5,0.5,0.5)
-    end)
+    if on then
+        fbState=fbState or {b=Lighting.Brightness,ct=Lighting.ClockTime,fe=Lighting.FogEnd,am=Lighting.Ambient,oa=Lighting.OutdoorAmbient,gs=Lighting.GlobalShadows}
+        Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=1e9
+        Lighting.Ambient=Color3.fromRGB(178,178,178); Lighting.OutdoorAmbient=Color3.fromRGB(178,178,178); Lighting.GlobalShadows=false
+    elseif fbState then
+        Lighting.Brightness=fbState.b; Lighting.ClockTime=fbState.ct; Lighting.FogEnd=fbState.fe
+        Lighting.Ambient=fbState.am; Lighting.OutdoorAmbient=fbState.oa; Lighting.GlobalShadows=fbState.gs
+    end
 end
 
-local function hideTrees(on)
-    pcall(function()
-        for _,v in ipairs(Workspace:GetDescendants()) do
-            if v:IsA("UnionOperation") or v:IsA("MeshPart") then
-                if v.Name:lower():find("tree") or v.Name:lower():find("leaf") or v.Name:lower():find("branch") then
-                    v.LocalTransparencyModifier=on and 1 or 0
+local autoEscapeTriggered = false
+local healthConn = nil
+local function TeleportToTree()
+    local TreeFolder=Workspace:FindFirstChild("TreeFolder"); if not TreeFolder then return end
+    local trees={}; for _,t in ipairs(TreeFolder:GetChildren()) do if t.Name:find("tree") then table.insert(trees,t) end end
+    if #trees==0 then return end
+    local r=root(); if not r then return end
+    local target=trees[math.random(1,#trees)]
+    r.CFrame=CFrame.new(target:GetPivot().Position+Vector3.new(0,8,0))
+end
+local function setupAutoEscape()
+    if healthConn then pcall(function() healthConn:Disconnect() end); healthConn=nil end
+    autoEscapeTriggered=false; if not F.Esc.AutoEscape then return end
+    local function bindHealth(ch)
+        local h=ch:FindFirstChildOfClass("Humanoid"); if not h then return end
+        autoEscapeTriggered=false
+        healthConn=h.HealthChanged:Connect(function(hp)
+            if not F.Esc.AutoEscape or autoEscapeTriggered then return end
+            if hp/h.MaxHealth<=0.3 then autoEscapeTriggered=true; TeleportToTree(); task.delay(3,function() autoEscapeTriggered=false end) end
+        end)
+    end
+    if char() then bindHealth(char()) end
+    LocalPlayer.CharacterAdded:Connect(function(ch) task.wait(0.3); autoEscapeTriggered=false; if F.Esc.AutoEscape then bindHealth(ch) end end)
+end
+
+local Remotes       = RS:FindFirstChild("Remotes")
+local ShootRemote   = nil
+local GiverRemote   = Remotes and Remotes:FindFirstChild("GiverPressed")
+local ReloadRemote  = nil
+local InteractItem  = Remotes and Remotes:FindFirstChild("InteractWithItem")
+local TeamEvent     = Remotes and Remotes:FindFirstChild("RequestTeamChange")
+local ArrestRemote  = Remotes and Remotes:FindFirstChild("ArrestPlayer")
+local Killfeed      = RS:FindFirstChild("Killfeed")
+local GunRemotes    = nil
+local PlayerTased   = nil
+
+pcall(function()
+    GunRemotes = RS:FindFirstChild("GunRemotes") or RS:WaitForChild("GunRemotes",5)
+    ShootRemote = GunRemotes and (GunRemotes:FindFirstChild("ShootEvent") or GunRemotes:WaitForChild("ShootEvent",5))
+    ReloadRemote = ShootRemote and ShootRemote.Parent:FindFirstChild("FuncReload")
+    PlayerTased = GunRemotes and GunRemotes:FindFirstChild("PlayerTased")
+end)
+
+local meleeEvent
+pcall(function() meleeEvent=RS:FindFirstChild("meleeEvent") or RS:WaitForChild("meleeEvent",3) end)
+
+local rand = Random.new()
+
+local _silentHook = false
+local _gmOldData, _gmOld = {}, nil
+local _gmOldEquip = nil
+
+do
+    local hookmeta=hookmetamethod; local getnc=getnamecallmethod; local ischeck=checkcaller
+    local wrapcc=newcclosure or function(f) return f end
+    if hookmeta and getnc then
+        local oldNC
+        oldNC=hookmeta(game,"__namecall",wrapcc(function(self,...)
+            local method=getnc()
+
+            if method=="GetAttributes" then
+                local result=oldNC(self,...)
+                if F.Auto.FastGuns then result.AutoFire=true; result.FireRate=F.Auto.FireRate end
+                if F.GM.On and _gmOld then
+                    if F.GM.NoSpread then result.SpreadRadius=0 end
+                    if F.GM.FullAuto then result.AutoFire=true end
+                    if result.FireRate then result.FireRate=result.FireRate*(F.GM.FireRate/100) end
                 end
+                return result
             end
-        end
-    end)
-end
 
-local function NoDoors()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if (v.Name=="PrisonDoor" or v.Name=="Door" or v.Name:lower():find("gate")) and v:IsA("BasePart") then
-            pcall(function() v.CanCollide=false end)
-        end
-    end
-end
-local function AddDoors()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if (v.Name=="PrisonDoor" or v.Name=="Door" or v.Name:lower():find("gate")) and v:IsA("BasePart") then
-            pcall(function() v.CanCollide=true end)
-        end
-    end
-end
-local function TransparentDoors(on)
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if (v.Name=="PrisonDoor" or v.Name=="Door") and v:IsA("BasePart") then
-            pcall(function() v.LocalTransparencyModifier=on and 0.75 or 0 end)
-        end
-    end
-end
-local function DestroyDoors()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if (v.Name=="PrisonDoor" or v.Name=="Door") and v:IsA("BasePart") then
-            pcall(function() v:Destroy() end)
-        end
-    end
-end
-local function UkFence()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if v.Name:lower():find("fence") and v:IsA("BasePart") then
-            pcall(function() v.CanTouch=false end)
-        end
-    end
-end
-local function DestroyFences()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if v.Name:lower():find("fence") and v:IsA("BasePart") then
-            pcall(function() v:Destroy() end)
-        end
-    end
-end
-local function DestroyGates()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if v.Name:lower():find("gate") and v:IsA("BasePart") then
-            pcall(function() v:Destroy() end)
-        end
-    end
-end
-
-local function ajr()
-    local c=char(); if not c then return end
-    local h=c:FindFirstChildOfClass("Humanoid"); if not h then return end
-    local conn=getconnections and getconnections(h:GetPropertyChangedSignal("Jump"))
-    if conn and conn[1] then conn[1]:Disable() end
-end
-
-local function BreakAllToilets()
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if v.Name=="Toilet" and v:IsA("Model") then
-            pcall(function()
-                for _,p in ipairs(v:GetDescendants()) do
-                    if p:IsA("BasePart") then p:Destroy() end
-                end
-            end)
-        end
-    end
-end
-
-local function hammerCheck()
-    local c=char(); if not c then return end
-    local tool=c:FindFirstChildOfClass("Tool")
-    if not (tool and tool.Name=="Hammer") then return end
-    for _,v in ipairs(Workspace:GetDescendants()) do
-        if v.Name=="Toilet" and v:IsA("Model") then
-            local pp=v.PrimaryPart or v:FindFirstChildWhichIsA("BasePart")
-            local r=root()
-            if pp and r and (pp.Position-r.Position).Magnitude < 10 then
-                pcall(function() v:Destroy() end)
-            end
-        end
-    end
-end
-
-local GiverRemote, InteractItem
-pcall(function() GiverRemote = RS.Remotes:FindFirstChild("GiverPressed") end)
-pcall(function() InteractItem = RS.Remotes:FindFirstChild("InteractWithItem") end)
-
-local allGuns = {"AK-47","MP5","M4A1","Remington 870","M700","M9","Revolver","Taser","Shotgun"}
-local function GetTool(name)
-    local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-    return bp and bp:FindFirstChild(name) or (char() and char():FindFirstChild(name))
-end
-
-local function GetGun(name)
-    for _,spawner in ipairs(Workspace:GetDescendants()) do
-        if (spawner:IsA("Model") or spawner:IsA("BasePart")) and spawner:GetAttribute("ToolName")==name then
-            local part=spawner:IsA("BasePart") and spawner or spawner:FindFirstChildWhichIsA("BasePart")
-            if part then
-                local r=root(); if not r then return end
-                local save=r.CFrame
-                pcall(function() r.CFrame=CFrame.new(part.Position+Vector3.new(0,3,0)) end)
-                task.wait(0.25)
-                if GiverRemote then pcall(function() GiverRemote:FireServer(spawner) end) end
-                if InteractItem then pcall(function() InteractItem:InvokeServer(part) end) end
-                task.wait(0.25)
-                pcall(function() r.CFrame=save end)
-                return
-            end
-        end
-    end
-end
-
-local _autoGunRunning=false
-local _autoGunLst=0
-local AUTOGUN_DELAY=8
-
-local _kcRunning=false
-local function startKeycard()
-    if _kcRunning then return end; _kcRunning=true
-    task.spawn(function()
-        while _kcRunning and F.Auto.Keycard do
-            for _,v in ipairs(Workspace:GetDescendants()) do
-                if v.Name=="Keycard" and v:IsA("Model") then
-                    local pp=v.PrimaryPart or v:FindFirstChildWhichIsA("BasePart")
-                    local r=root()
-                    if pp and r then
-                        local save=r.CFrame
-                        pcall(function() r.CFrame=CFrame.new(pp.Position+Vector3.new(0,2,0)) end)
-                        task.wait(0.2)
-                        if GiverRemote then pcall(function() GiverRemote:FireServer(v) end) end
-                        task.wait(0.1)
-                        pcall(function() r.CFrame=save end)
+            if F.Aim.Silent and attached and self==ShootRemote
+               and (not ischeck or not ischeck()) and method=="FireServer" then
+                local shots=...
+                if type(shots)=="table" then
+                    if rand:NextNumber(0,100) <= F.Aim.HitChance then
+                        local targetPart = rand:NextNumber(0,100) <= F.Aim.HeadshotChance and "Head" or "HumanoidRootPart"
+                        local ok,t=pcall(function() return Aim.getTarget(F.Aim.FOV,F.Aim.WallCheck,targetPart) end)
+                        if ok and t then
+                            for _,e in ipairs(shots) do
+                                if type(e)=="table" then e[2]=t.Position; e[3]=t end
+                            end
+                        end
                     end
                 end
             end
-            task.wait(3)
-        end
-        _kcRunning=false
-    end)
+            return oldNC(self,...)
+        end))
+        _silentHook=true
+    end
 end
-
-local function killSelf()
-    local h=hum(); if h then h.Health=0 end
-end
-
-local function TeleportToTree()
-    pcall(function()
-        for _,v in ipairs(Workspace:GetDescendants()) do
-            if v.Name:lower():find("tree") and v:IsA("BasePart") then
-                tpMove(CFrame.new(v.Position+Vector3.new(0,6,0))); return
-            end
-        end
-        tpMove(CFrame.new(-200,80,2000))
-    end)
-end
-
-local function setupAutoEscape()
-    if not F.Esc.AutoEscape then return end
-    task.spawn(function()
-        while F.Esc.AutoEscape and attached do
-            local h=hum()
-            if h and h.Health>0 and h.Health/h.MaxHealth<=0.3 then
-                TeleportToTree()
-                task.wait(5)
-            end
-            task.wait(0.5)
-        end
-    end)
-end
-
-local doRage
-
-local function fireClick()
-    pcall(function()
-        local m = LocalPlayer:GetMouse()
-        local ok = pcall(function()
-            local vim = game:GetService("VirtualInputManager")
-            vim:SendMouseButtonEvent(m.X, m.Y, 0, true, game, 0)
-            task.wait(0.05)
-            vim:SendMouseButtonEvent(m.X, m.Y, 0, false, game, 0)
-        end)
-        if not ok then
-            local c = char()
-            local tool = c and c:FindFirstChildWhichIsA("Tool")
-            if tool and tool.Activated then
-                pcall(function() tool.Activated:Fire() end)
-            end
-        end
-    end)
-end
+Hub._silentHook=_silentHook
 
 local Aim = {}
 do
-    local function getTarget(fovOverride, triggerMode)
-        local fov=fovOverride or F.Aim.FOV
-        local mousePos=aimOrigin()
-        local best,bestDist=nil,math.huge
+    local function los(part)
+        local rp=RaycastParams.new(); rp.FilterType=Enum.RaycastFilterType.Exclude; rp.FilterDescendantsInstances={char()}
+        local o=cam().CFrame.Position; local r=Workspace:Raycast(o,part.Position-o,rp)
+        return (not r) or r.Instance:IsDescendantOf(part.Parent)
+    end
+    function Aim.getTarget(maxFov, needLos, partName)
+        local pn = partName or F.Aim.Part
+        local best,bd=nil,maxFov or F.Aim.FOV; local center=aimOrigin()
         for _,p in ipairs(Players:GetPlayers()) do
             if p~=LocalPlayer and isEnemy(p) then
-                local ok,c,h=alive(p); if not ok then continue end
-                local part=c:FindFirstChild(F.Aim.Part) or c:FindFirstChild("HumanoidRootPart")
+                local ok,c=alive(p)
+                local part=ok and (c:FindFirstChild(pn) or c:FindFirstChild("HumanoidRootPart"))
                 if part then
-                    local sp,vis=cam():WorldToViewportPoint(part.Position)
-                    if vis then
-                        local d=(Vector2.new(sp.X,sp.Y)-mousePos).Magnitude
-                        if d<fov and d<bestDist then
-                            if F.Aim.WallCheck then
-                                local rp=RaycastParams.new()
-                                rp.FilterDescendantsInstances={char(),c}
-                                rp.FilterType=Enum.RaycastFilterType.Exclude
-                                local o=cam().CFrame.Position
-                                local ray=Workspace:Raycast(o,part.Position-o,rp)
-                                if ray and not ray.Instance:IsDescendantOf(c) then continue end
-                            end
-                            best=part; bestDist=d
-                        end
+                    local sp,on=cam():WorldToViewportPoint(part.Position)
+                    if on then local d=(Vector2.new(sp.X,sp.Y)-center).Magnitude
+                        if d<bd and ((not needLos and not F.Aim.WallCheck) or los(part)) then bd,best=d,part end
                     end
                 end
             end
         end
         return best
     end
-    Aim.getTarget=getTarget
 end
 
-doRage = function(target)
-    if not target then return end
+local function fireClick()
+    if mouse1press and mouse1release then pcall(function() mouse1press(); task.wait(0.02); mouse1release() end)
+    elseif mouse1click then pcall(mouse1click) end
+end
+
+local function heldGun()
+    local c=char(); if c then for _,t in ipairs(c:GetChildren()) do if t:IsA("Tool") then return t,true end end end
+    local bp=LocalPlayer:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then return t,false end end end
+    return nil
+end
+local function reloadGun(tool)
+    if not (tool and ReloadRemote) then return end
+    pcall(function()
+        local sess=tick(); tool:SetAttribute("Local_ReloadSession",sess)
+        task.spawn(function() ReloadRemote:InvokeServer() end)
+        task.wait(tool:GetAttribute("ReloadTime") or 2)
+        tool:SetAttribute("Local_CurrentAmmo",tool:GetAttribute("MaxAmmo") or 30)
+        tool:SetAttribute("Local_ReloadSession",0)
+    end)
+end
+local function findGiver()
+    local team=(LocalPlayer.Team and LocalPlayer.Team.Name or ""):lower()
+    local want=team:find("guard") and "Remington 870" or "AK-47"; local fallback
+    for _,d in ipairs(Workspace:GetDescendants()) do
+        local tn=d:GetAttribute("ToolName")
+        if tn then
+            local part=d:IsA("BasePart") and d or d:FindFirstChildWhichIsA("BasePart",true)
+            if part then
+                if tn==want then return part end
+                local low=tostring(tn):lower()
+                if not fallback and (low:find("ak") or low:find("rifle") or low:find("gun") or low:find("pistol") or low:find("smg") or low:find("remington")) then fallback=part end
+            end
+        end
+    end
+    return fallback
+end
+local function armUp()
+    local g,equipped=heldGun()
+    if g then if not equipped then pcall(function() hum():EquipTool(g) end) end; return true end
+    local giver=findGiver(); local r=root()
+    if giver and r and GiverRemote then
+        local save=r.CFrame
+        pcall(function() r.CFrame=CFrame.new(giver.Position+Vector3.new(0,2.5,0)) end)
+        task.wait(0.3)
+        pcall(function() GiverRemote:FireServer(giver) end)
+        pcall(function() if giver.Parent then GiverRemote:FireServer(giver.Parent) end end)
+        task.wait(0.3); pcall(function() r.CFrame=save end); task.wait(0.2)
+    end
+    g,equipped=heldGun()
+    if g then if not equipped then pcall(function() hum():EquipTool(g) end) end; return true end
+    return false
+end
+local raging=false
+Hub._raging=function() return raging end
+local function doRage(target)
+    if raging or not (target and target.Parent) or not ShootRemote then return end
+    raging=true
     task.spawn(function()
-        Hub._raging=function() return true end
-        local guns={"AK-47","MP5","M4A1","Remington 870","M9","Revolver"}
-        local gun
-        for _,g in ipairs(guns) do
-            gun=GetTool(g)
-            if gun then break end
-            GetGun(g); task.wait(0.4)
-            gun=GetTool(g); if gun then break end
+        pcall(function()
+            local r=root(); if not r then raging=false; return end
+            local home=r.CFrame
+            if not armUp() then raging=false; return end
+            task.wait(0.15)
+            local tool=char() and char():FindFirstChildOfClass("Tool"); if not tool then raging=false; return end
+            local fireRate=tool:GetAttribute("FireRate") or 0.12
+            local interval=math.max(fireRate,0.09)+0.02
+            local maxAmmo=tool:GetAttribute("MaxAmmo") or 20
+            local ammo=tool:GetAttribute("Local_CurrentAmmo") or maxAmmo
+            if ammo<12 then reloadGun(tool) end
+            local tc=target.Character
+            local troot=tc and (tc:FindFirstChild("HumanoidRootPart") or tc:FindFirstChild("Torso"))
+            local thum=tc and tc:FindFirstChildOfClass("Humanoid")
+            if not (troot and thum and thum.Health>0) then raging=false; return end
+            tweenTP(troot.CFrame*CFrame.new(0,0,3.2),0.2); task.wait(0.08)
+            local fired=0
+            while thum and thum.Parent and thum.Health>0 and fired<28 do
+                local thead=tc and tc:FindFirstChild("Head"); if not thead then break end
+                local mh=char() and char():FindFirstChild("Head")
+                local o=(mh and mh.Position) or thead.Position
+                pcall(function() ShootRemote:FireServer({{o,thead.Position,thead}}) end)
+                fired+=1
+                local left=(tool:GetAttribute("Local_CurrentAmmo") or maxAmmo)-1
+                pcall(function() tool:SetAttribute("Local_CurrentAmmo",left) end)
+                if left<=1 then reloadGun(tool) end
+                task.wait(interval)
+                local ntr=tc and (tc:FindFirstChild("HumanoidRootPart") or tc:FindFirstChild("Torso"))
+                local rr=root()
+                if ntr and rr and (rr.Position-ntr.Position).Magnitude>9 then tweenTP(ntr.CFrame*CFrame.new(0,0,3.2),0.12) end
+            end
+            tweenTP(home,0.2)
+        end)
+        raging=false
+    end)
+end
+Hub._rage=doRage
+
+local gunAliases = {
+    ["ak-47"]="AK-47",["ak"]="AK-47",["ak47"]="AK-47",
+    ["remington"]="Remington 870",["rem"]="Remington 870",["shotgun"]="Remington 870",
+    ["m4"]="M4A1",["m4a1"]="M4A1",["mp5"]="MP5",["fal"]="FAL",["m700"]="M700"
+}
+
+local AlreadyFound={}
+local function FindGunSpawner(GunName)
+    if AlreadyFound[GunName] then return AlreadyFound[GunName],true end
+    for _,v in ipairs(Workspace:GetDescendants()) do
+        if v.Name=="TouchGiver" then
+            local ActualGiver=v:FindFirstChild("TouchGiver") or v
+            if v:GetAttribute("ToolName")==GunName then AlreadyFound[GunName]=ActualGiver; return ActualGiver,false end
+            if v.Parent and v.Parent:GetAttribute("ToolName")==GunName then AlreadyFound[GunName]=ActualGiver; return ActualGiver,false end
         end
-        local tr=target.Character and (target.Character:FindFirstChild("HumanoidRootPart") or target.Character:FindFirstChild("Torso"))
-        if tr then tpInstant(tr.CFrame*CFrame.new(0,0,-2.5)) end
-        task.wait(0.1)
-        local h=target.Character and target.Character:FindFirstChildOfClass("Humanoid")
-        if h and h.Health>0 then fireClick() end
-        task.wait(3)
-        Hub._raging=function() return false end
+    end
+    return nil,nil
+end
+local function GetTool(name)
+    return (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild(name))
+        or (char() and char():FindFirstChild(name))
+end
+local function GetGun(GunName)
+    local Giver,Found=FindGunSpawner(GunName); if not Giver then Notify("Can't find giver for "..GunName); return end
+    if not Found then
+        local Clone=Giver:Clone(); Clone.Parent=Giver.Parent
+        Giver.Parent=Workspace.Folder; Giver.CanCollide=false; Giver.Transparency=1
+    end
+    local r=root(); if not r then return end
+    r.CFrame=Giver.CFrame*CFrame.new(math.random(-2,2),0,0)
+    local timeout=tick()+5
+    repeat task.wait() until GetTool(GunName) or tick()>timeout
+end
+
+local allGuns={"AK-47","Remington 870","MP5"}
+
+local _autoGunRunning=false
+local _autoGunLst=os.clock()
+local AUTOGUN_DELAY=10
+
+local _kcRunning=false
+local function tryGiveKeycard()
+    local bp=LocalPlayer:FindFirstChild("Backpack"); if not bp then return end
+    if bp:FindFirstChild("Key card") or (LocalPlayer.Team and LocalPlayer.Team.Name=="Guards") then return end
+    local toolsFolder=RS:FindFirstChild("Tools")
+    local source=(toolsFolder and toolsFolder:FindFirstChild("Key card",true))
+    if not source then
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p~=LocalPlayer then local bk=p:FindFirstChild("Backpack"); if bk then local t=bk:FindFirstChild("Key card"); if t then source=t; break end end end
+        end
+    end
+    if source then pcall(function() source:Clone().Parent=bp end) end
+end
+local function startKeycard()
+    if _kcRunning then return end; _kcRunning=true
+    task.spawn(function()
+        while _kcRunning do pcall(tryGiveKeycard); task.wait(0.3) end
     end)
 end
 
-local lastDeathCF=nil
-
-local speedConn = nil
-local function startSpeedLoop()
-    if speedConn then return end
-    speedConn = RunService.Heartbeat:Connect(function()
-        if not attached then return end
-        local h = hum()
-        if h then
-            if F.Mov.Speed then h.WalkSpeed = F.Mov.SpeedV end
-            if F.Mov.JumpOn then h.UseJumpPower = true; h.JumpPower = F.Mov.JumpV end
-        end
-    end)
-    conns[#conns+1] = speedConn
+local normalWS=25
+local normalJP=50
+local function fixTools()
+    local c=char(); if not c then return end
+    local h=c:FindFirstChild("Humanoid"); if not h then h:UnequipTools() end
+    local bp=LocalPlayer:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then t.Enabled=true end end end
+end
+local function restoreSpeed(ws,jp)
+    task.wait(3); local h=hum(); if h then h.WalkSpeed=ws; h.JumpPower=jp end
 end
 
-bind(Players.LocalPlayer.CharacterAdded,function(c)
-    clearNoclip()
-    if F.Mov.Noclip then task.wait(0.5); applyNoclip() end
-    if F.Mov.Spin then task.wait(0.5); applySpin() end
-    stopCarFly()
-    local charHum=c:WaitForChild("Humanoid",5)
-    if not charHum then return end
+local fugging=false
+local function SwitchToCriminalAndReturn(ocf)
+    fugging=true
+    task.spawn(function()
+        pcall(function()
+            local crimPad=Workspace["Criminals Spawn"] and Workspace["Criminals Spawn"]:FindFirstChild("SpawnLocation")
+            local r=root(); if not r then return end
+            r.CFrame=crimPad and crimPad.CFrame or CFrame.new(-864,94,2085)
+            Notify("Switching to Criminal...")
+            local timeout=tick()+10
+            repeat task.wait() until (LocalPlayer.Team and LocalPlayer.Team.Name=="Criminals") or tick()>timeout
+            Notify("Criminal!"); r.CFrame=ocf; Notify("Returned.")
+        end)
+        fugging=false
+    end)
+end
 
-    local function fixTools()
-        local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-        if not bp then return end
-        for _,tool in ipairs(bp:GetChildren()) do
-            if tool:IsA("Tool") then
-                local handle=tool:FindFirstChild("Handle")
-                if handle then
-                    pcall(function()
-                        if F.Auto.OldSounds then
-                            for _,sound in ipairs(handle:GetChildren()) do
-                                if sound:IsA("Sound") then sound.SoundId=sound.SoundId end
-                            end
-                        end
-                    end)
+local Doors=Workspace:FindFirstChild("Doors")
+local CellDoors=Workspace:FindFirstChild("CellDoors")
+local function NoDoors()
+    if Doors then for _,v in ipairs(Doors:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=false end end end
+    if CellDoors then for _,v in ipairs(CellDoors:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=false end end end
+end
+local function AddDoors()
+    if Doors then for _,v in ipairs(Doors:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=true end end end
+    if CellDoors then for _,v in ipairs(CellDoors:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=true end end end
+end
+local function TransparentDoors(on)
+    local tr=on and 0.6 or 0
+    if Doors then for _,v in ipairs(Doors:GetDescendants()) do if v:IsA("BasePart") then v.Transparency=tr end end end
+    if CellDoors then for _,v in ipairs(CellDoors:GetDescendants()) do if v:IsA("BasePart") then v.Transparency=tr end end end
+end
+local function DestroyDoors()
+    if Doors then for _,v in ipairs(Doors:GetDescendants()) do if v:IsA("BasePart") then v:Destroy() end end end
+    if CellDoors then for _,v in ipairs(CellDoors:GetDescendants()) do if v:IsA("BasePart") then v:Destroy() end end end
+end
+
+local function UkFence()
+    for _,fence in ipairs(Workspace.Prison_Fences:GetDescendants()) do
+        local dp=fence:FindFirstChild("damagePart")
+        if dp then for _,child in ipairs(dp:GetChildren()) do if child:IsA("TouchTransmitter") then child:Destroy() end end end
+    end
+end
+local function DestroyFences()
+    pcall(function()
+        for _,v in ipairs(Workspace.Prison_Fences:GetChildren()) do if v.Name=="fence" then v:Destroy() end end
+    end)
+end
+local function DestroyGates()
+    pcall(function()
+        Workspace.Prison_Fences.Prison_Gate:Destroy()
+        Workspace.Prison_Fences.gate:Destroy()
+    end)
+end
+
+local function BreakAllToilets()
+    if not meleeEvent then return end
+    for _,toilet in ipairs(Workspace:GetDescendants()) do
+        if toilet.Name=="Toilet" and toilet:IsA("Model") then
+            for i=1,15 do meleeEvent:FireServer(toilet,1) end
+        end
+    end
+end
+local _hammerHeld=false
+local function hammerCheck()
+    local c=char(); if not c then return end
+    local hasHammer=c:FindFirstChild("Hammer")~=nil
+    if hasHammer and not _hammerHeld then BreakAllToilets() end
+    _hammerHeld=hasHammer
+end
+
+local function ajr()
+    local c=char(); if not c then return end
+    local aj=c:FindFirstChild("AntiJump")
+    if aj and aj:IsA("LocalScript") then pcall(function() aj:Destroy() end) end
+end
+
+local function hideTrees(hide)
+    local trees=Workspace:FindFirstChild("Trees"); if not trees then return end
+    local kids=trees:GetChildren(); local preserve=kids[39]
+    for i=#kids,1,-1 do
+        local c=kids[i]
+        if c~=preserve then
+            for _,d in ipairs(c:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    d.Transparency=hide and 1 or 0
+                    d.CanCollide=not hide; d.CanQuery=not hide; d.CanTouch=not hide
                 end
             end
         end
     end
+end
+
+local function killSelf()
+    local h=hum(); if h then pcall(function() h.Health=0 end) end
+end
+
+local _antiTazeOld = nil
+local _antiTazeConn = nil
+local function setupAntiTaze()
+    if not F.AT.On then
+        if _antiTazeOld and _antiTazeConn and _antiTazeConn.Function then
+            pcall(function() hookfunction(_antiTazeConn.Function, _antiTazeOld) end)
+        end
+        _antiTazeOld=nil; _antiTazeConn=nil
+        return
+    end
+    if not PlayerTased then return end
+    task.spawn(function()
+        local conn
+        local timeout=tick()+10
+        repeat
+            local ok,c=pcall(function() return getconnections(PlayerTased.OnClientEvent)[1] end)
+            if ok and c and c.Function then conn=c end
+            if not conn then task.wait(0.1) end
+        until conn or tick()>timeout or not F.AT.On
+        if not conn or not F.AT.On then return end
+        _antiTazeConn=conn
+        _antiTazeOld=hookfunction(conn.Function, function()
+            local c=char()
+            LocalPlayer:SetAttribute("BackpackEnabled",false)
+            local h=hum()
+            if h then h:UnequipTools() end
+            task.wait(3.5)
+            if LocalPlayer.Character==c then
+                LocalPlayer:SetAttribute("BackpackEnabled",true)
+            end
+        end)
+    end)
+end
+
+local _disablerConn = nil
+local function setupDisabler(ch)
+    if not F.DIS.On then return end
+    if not ch then ch=char() end
+    if not ch then return end
+    local head=ch:FindFirstChild("Head")
+    if not head then return end
+    task.defer(function()
+        local ok,conlist=pcall(function() return getconnections(head:GetPropertyChangedSignal("CanCollide")) end)
+        if ok and conlist then
+            for _,c in ipairs(conlist) do
+                pcall(function() c:Disable() end)
+            end
+        end
+    end)
+end
+local function stopDisabler(ch)
+    if not ch then ch=char() end
+    if not ch then return end
+    local head=ch:FindFirstChild("Head")
+    if not head then return end
+    local ok,conlist=pcall(function() return getconnections(head:GetPropertyChangedSignal("CanCollide")) end)
+    if ok and conlist then
+        for _,c in ipairs(conlist) do
+            pcall(function() c:Enable() end)
+        end
+    end
+end
+
+local _arrestCooldown = 0
+local _arrestRunning = false
+local function startAutoArrest()
+    if _arrestRunning then return end
+    _arrestRunning=true
+    task.spawn(function()
+        while _arrestRunning and F.AA.On do
+            pcall(function()
+                if _arrestCooldown < os.clock() then
+                    local check=true
+                    if F.AA.HandCheck then
+                        local c=char()
+                        local tool=c and c:FindFirstChildWhichIsA("Tool")
+                        check=tool and tool.Name=="Handcuffs"
+                    end
+                    if check and ArrestRemote then
+                        local r=root()
+                        if r then
+                            for _,p in ipairs(Players:GetPlayers()) do
+                                if p~=LocalPlayer then
+                                    local ok,c,h=alive(p)
+                                    if ok and c then
+                                        local pr=c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso")
+                                        if pr and (pr.Position-r.Position).Magnitude<=F.AA.Range then
+                                            local tn=p.Team and p.Team.Name or ""
+                                            local isInmate=tn:lower():find("inmate")~=nil
+                                            local isCrim=tn:lower():find("crim")~=nil or tn:lower():find("mafia")~=nil
+                                            if not (isInmate and not F.AA.InmatesEnabled) and not (isCrim and not F.AA.CriminalsEnabled) then
+                                                if not c:GetAttribute("Arrested") then
+                                                    local res=pcall(function()
+                                                        local r2=ArrestRemote:InvokeServer(p,1)
+                                                        if r2 then
+                                                            _arrestCooldown=os.clock()+7
+                                                            Notify("Arrested "..p.Name,3)
+                                                        end
+                                                    end)
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(0.05)
+        end
+        _arrestRunning=false
+    end)
+end
+local function stopAutoArrest()
+    _arrestRunning=false
+end
+
+local _tbRayParams = RaycastParams.new()
+_tbRayParams.FilterType = Enum.RaycastFilterType.Exclude
+local _tbCheckParams = RaycastParams.new()
+_tbCheckParams.FilterType = Enum.RaycastFilterType.Exclude
+local _tbRunning = false
+
+local function getTriggerTarget()
+    local c=char(); if not c then return end
+    local head=c:FindFirstChild("Head"); if not head then return end
+    local r=root(); if not r then return end
+    local h=hum(); if not (h and h.Health>0) then return end
+
+    local excl={c}
+    if F.VWB.On then
+        local cc=Workspace:FindFirstChild("CarContainer")
+        if cc then excl[#excl+1]=cc end
+    end
+    _tbRayParams.FilterDescendantsInstances=excl
+    _tbCheckParams.FilterDescendantsInstances=excl
+
+    local posX,posY
+    if UIS.MouseBehavior==Enum.MouseBehavior.LockCenter then
+        posX=cam().ViewportSize.X/2; posY=cam().ViewportSize.Y/2
+    else
+        local loc=UIS:GetMouseLocation(); posX=loc.X; posY=loc.Y
+    end
+
+    local rayObj=cam():ViewportPointToRay(posX,posY)
+    local ray=Workspace:Raycast(rayObj.Origin, rayObj.Direction*1500, _tbRayParams)
+    if not ray then return end
+
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and isEnemy(p) then
+            local ok,pc,ph=alive(p)
+            if ok and pc then
+                if ray.Instance:IsDescendantOf(pc) then
+                    local origin=head.Position
+                    local hitCheck=Workspace:Raycast(origin, (ray.Position-origin), _tbCheckParams)
+                    if hitCheck and hitCheck.Instance:IsDescendantOf(pc) then
+                        return p
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function startTriggerBot()
+    if _tbRunning then return end
+    _tbRunning=true
+    task.spawn(function()
+        while _tbRunning and F.TB.On do
+            pcall(function()
+                local t=getTriggerTarget()
+                if t and ShootRemote then
+                    local c=char()
+                    if c then
+                        local tool=c:FindFirstChildWhichIsA("Tool")
+                        if tool and tool:GetAttribute("FireRate") then
+                            local ammo=tool:GetAttribute("Local_CurrentAmmo") or 1
+                            if ammo>0 and not tool:GetAttribute("Local_IsShooting") then
+                                local head=c:FindFirstChild("Head")
+                                local tc=t.Character
+                                local thead=tc and tc:FindFirstChild("Head")
+                                if head and thead then
+                                    pcall(function()
+                                        ShootRemote:FireServer({{head.Position,thead.Position,thead}})
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait()
+        end
+        _tbRunning=false
+    end)
+end
+local function stopTriggerBot()
+    _tbRunning=false
+end
+
+local _kaRunning = false
+local function startKillaura()
+    if _kaRunning then return end
+    _kaRunning=true
+    task.spawn(function()
+        while _kaRunning and F.KA.On do
+            pcall(function()
+                if F.KA.RequireMouse and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                    task.wait(0.05); return
+                end
+                local r=root(); if not r then return end
+                local selfPos=r.Position
+                local localFacing=(r.CFrame.LookVector*Vector3.new(1,0,1))
+                local halfAngle=math.rad(F.KA.Angle)/2
+                local count=0
+                for _,p in ipairs(Players:GetPlayers()) do
+                    if count>=F.KA.MaxTargets then break end
+                    if p~=LocalPlayer and isEnemy(p) then
+                        local ok,c=alive(p)
+                        if ok and c then
+                            local pr=c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso")
+                            if pr then
+                                local dist=(pr.Position-selfPos).Magnitude
+                                if dist<=F.KA.Range then
+                                    local delta=(pr.Position-selfPos)*Vector3.new(1,0,1)
+                                    local angle=math.acos(math.clamp(localFacing:Dot(delta.Unit),-1,1))
+                                    if angle<=halfAngle then
+                                        if meleeEvent then
+                                            pcall(function() meleeEvent:FireServer(p,1,1) end)
+                                        end
+                                        count+=1
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(0.05)
+        end
+        _kaRunning=false
+    end)
+end
+local function stopKillaura()
+    _kaRunning=false
+end
+
+if Killfeed then
+    bind(Killfeed.ChildAdded,function(child)
+        if F.Feed.Kill then Notify("☠ "..child.Name,2) end
+    end)
+end
+
+local _htLastState={}
+local function monitorHT(p)
+    local function track(c)
+        _htLastState[p]={Trespassing=false,Hostile=false}
+        while c.Parent do
+            task.wait(0.3)
+            local tres=c:GetAttribute("Trespassing"); local hos=c:GetAttribute("Hostile")
+            if p.Team and p.Team.Name:lower():find("inmate") then
+                if tres and not _htLastState[p].Trespassing and F.Feed.Hostile then Notify(p.Name.." is TRESPASSING!") end
+                if hos and not _htLastState[p].Hostile and F.Feed.Hostile then Notify(p.Name.." is HOSTILE!") end
+            end
+            _htLastState[p].Trespassing=tres; _htLastState[p].Hostile=hos
+        end
+    end
+    p.CharacterAdded:Connect(track)
+    if p.Character then task.spawn(track,p.Character) end
+end
+for _,p in ipairs(Players:GetPlayers()) do monitorHT(p) end
+bind(Players.PlayerAdded,monitorHT)
+
+local gunSounds={
+    ["M4A1"]={ReloadSound="rbxassetid://142491708",ShootSound="rbxassetid://150544849"},
+    ["AK-47"]={ReloadSound="rbxassetid://142491708",ShootSound="rbxassetid://153230498"},
+    ["M9"]={ReloadSound="rbxassetid://138084889",ShootSound="rbxassetid://134436500"},
+    ["Remington 870"]={ReloadSound="rbxassetid://145081845",ShootSound="rbxassetid://138083993"},
+    ["M700"]={ReloadSound="rbxassetid://97852355",ShootSound="rbxassetid://406722373"},
+    ["MP5"]={ReloadSound="rbxassetid://142491708",ShootSound="rbxassetid://10209859"},
+    ["FAL"]={ReloadSound="rbxassetid://142491708"},
+}
+local function applySounds(tool)
+    if not F.Auto.OldSounds then return end
+    if F.Auto.OldSoundsMe and tool.Parent~=char() then return end
+    local sounds=gunSounds[tool.Name]; if not sounds then return end
+    for soundName,id in pairs(sounds) do
+        for _,obj in ipairs(tool:GetDescendants()) do
+            if obj:IsA("Sound") and obj.Name==soundName then obj.SoundId=id end
+        end
+    end
+end
+local function hookTool(tool)
+    if not gunSounds[tool.Name] then return end
+    applySounds(tool)
+    tool.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Sound") and F.Auto.OldSounds then
+            local id=gunSounds[tool.Name] and gunSounds[tool.Name][obj.Name]
+            if id then obj.SoundId=id end
+        end
+    end)
+end
+local function hookCharacter(c)
+    c.ChildAdded:Connect(function(child) if child:IsA("Tool") then hookTool(child) end end)
+    for _,child in ipairs(c:GetChildren()) do if child:IsA("Tool") then hookTool(child) end end
+end
+for _,p in ipairs(Players:GetPlayers()) do if p.Character then hookCharacter(p.Character) end; p.CharacterAdded:Connect(hookCharacter) end
+bind(Players.PlayerAdded,function(p) p.CharacterAdded:Connect(hookCharacter) end)
+
+local lastDeathCF=nil
+
+bind(LocalPlayer.CharacterAdded,function(newChar)
+    task.wait(0.5)
+    if F.Auto.AJR then ajr() end
+    if F.Mov.Noclip then applyNoclip() end
+    if F.Esc.AutoEscape then setupAutoEscape() end
+    if F.Auto.Keycard then _kcRunning=false; task.wait(0.2); startKeycard() end
+    if F.Auto.Guns then _autoGunRunning=false; _autoGunLst=os.clock() end
+    if F.DIS.On then setupDisabler(newChar) end
+    if F.AT.On then setupAntiTaze() end
+
+    local charHum=newChar:WaitForChild("Humanoid")
+    local animator=charHum:WaitForChild("Animator")
+
+    animator.AnimationPlayed:Connect(function(track)
+        if F.Prot.AntiArrest and track.Animation.AnimationId=="rbxassetid://287112271" then
+            local r=root(); local wasCrim=LocalPlayer.TeamColor and LocalPlayer.TeamColor.Name=="Really red"
+            local cpos=r and r.CFrame
+            charHum.Health=0
+            LocalPlayer.CharacterAdded:Wait()
+            repeat task.wait() until root()
+            task.wait(0.1)
+            if wasCrim and cpos then SwitchToCriminalAndReturn(cpos) end
+        end
+
+        if F.Prot.AntiTase and track.Animation.AnimationId=="rbxassetid://279227693" then
+            local ws=normalWS; local jp=normalJP
+            track:Stop(); track:Destroy()
+            local h=hum()
+            if h then h.PlatformStand=false; h.Sit=false; task.wait(); h.WalkSpeed=ws; h.JumpPower=jp end
+            fixTools(); task.delay(0.2,fixTools); task.spawn(restoreSpeed,ws,jp)
+        end
+    end)
 
     charHum.Died:Connect(function()
         if F.Auto.AutoRespawn then
             local r=root(); if r then lastDeathCF=r.CFrame end
         end
     end)
+
     if lastDeathCF and F.Auto.AutoRespawn then
-        task.spawn(function()
-            task.wait(12)
-            local r=root(); if r then r.CFrame=lastDeathCF end
-        end)
+        task.wait(12)
+        local r=root(); if r then r.CFrame=lastDeathCF end
     end
-
-    fixTools(); task.delay(0.2,fixTools)
 end)
-
-startSpeedLoop()
 
 local plTarget, plFollow, spectating, spectateTarget=nil,false,false,nil
 local function stopSpectate() spectating=false; spectateTarget=nil; local mh=hum(); if mh then pcall(function() cam().CameraSubject=mh end) end end
-
--- ============================================================
--- VAPE MODULE SYSTEM
--- ============================================================
-
-local vapeModConns = {}
-local function vapeClean(conn) if conn then vapeModConns[#vapeModConns+1]=conn end; return conn end
-local function clearVapeConns() for _,c in ipairs(vapeModConns) do pcall(function() c:Disconnect() end) end; vapeModConns={} end
-
-local vapeModThreads = {}
-local function killVapeThreads() for _,t in ipairs(vapeModThreads) do pcall(function() task.cancel(t) end) end; vapeModThreads={} end
-
-local function vapeSpawn(fn) local t=task.spawn(fn); vapeModThreads[#vapeModThreads+1]=t; return t end
-
-local function getRoot() return root() end
-local function getChar() return char() end
-local function getHum() return hum() end
-
-local function isAlive()
-    local h=hum(); return h and h.Health>0
-end
-
-local function getEntityList()
-    local list={}
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p~=LocalPlayer then
-            local ok,c,h=alive(p)
-            if ok and c then
-                local rp=c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso")
-                local head=c:FindFirstChild("Head")
-                if rp and h then
-                    list[#list+1]={
-                        Player=p, Character=c, Humanoid=h, Health=h.Health,
-                        RootPart=rp, Head=head or rp,
-                        Targetable=isEnemy(p)
-                    }
-                end
-            end
-        end
-    end
-    return list
-end
-
-local function getClosestEntity(range, part, attackCheck)
-    local entities=getEntityList()
-    local r=getRoot(); if not r then return nil end
-    local best,bestDist=nil,math.huge
-    for _,ent in ipairs(entities) do
-        if attackCheck and not ent.Targetable then continue end
-        local ep=ent[part or "RootPart"]
-        if ep then
-            local d=(ep.Position-r.Position).Magnitude
-            if d<(range or 12) and d<bestDist then
-                best=ent; bestDist=d
-            end
-        end
-    end
-    return best
-end
-
--- ============================================================
--- PL BOOTSTRAP + TRACERHOOK + SPRING
--- ============================================================
-
-local pl = {}
-local Spring = {}
-do
-    Spring.__index = Spring
-    function Spring.new(props)
-        local p = props or {}
-        return setmetatable({
-            Target=Vector3.new(), Position=Vector3.new(), Velocity=Vector3.new(),
-            Mass=p.Mass or 5, Force=p.Force or 50, Damping=p.Damping or 4, Speed=p.Speed or 4
-        }, Spring)
-    end
-    function Spring:Update(dt)
-        local iters = dt / ((1/60)/8)
-        local sdt = dt * self.Speed / iters
-        for _=1, math.round(iters) do
-            local acc = (self.Target - self.Position) * self.Force / self.Mass
-            acc -= self.Velocity * self.Damping
-            self.Velocity += acc * sdt
-            self.Position += self.Velocity * sdt
-        end
-        return self.Position
-    end
-end
-
-local TracerHook = {Hooks={}}
-local plReady = false
-
-task.spawn(function()
-    local ok = pcall(function()
-        pl.GunTracers = require(RS.SharedModules.GunTracers)
-    end)
-    if not ok then
-        pcall(function()
-            for _,v in ipairs(RS:GetDescendants()) do
-                if v.Name=="GunTracers" and v:IsA("ModuleScript") then
-                    pl.GunTracers = require(v); break
-                end
-            end
-        end)
-    end
-
-    local function getShootFunction()
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("Home", true)
-        gui = gui and gui:FindFirstChild("hud") and gui.hud:FindFirstChild("ActionArea")
-        if not gui then return end
-        if getconnections then
-            for _,conn in ipairs(getconnections(gui.InputBegan)) do
-                if conn.Function then
-                    local ok2,sh = pcall(debug.getupvalue, conn.Function, 2)
-                    if ok2 and sh then
-                        pl.Shoot = sh
-                        pcall(function() pl.Reload = debug.getupvalue(pl.Shoot, 2) end)
-                        pcall(function() pl.Bullet = debug.getupvalue(pl.Shoot, 16) end)
-                        if pl.Reload then pcall(function() pl.PlaySound = debug.getupvalue(pl.Reload, 3) end) end
-                        break
-                    end
-                end
-            end
-            for _,conn in ipairs(getconnections(LocalPlayer.CharacterAdded)) do
-                if conn.Function then
-                    local s = debug.info(conn.Function, 's') or ""
-                    if s:find("GunController") then
-                        pcall(function() pl.Equip = debug.getupvalue(conn.Function, 3) end)
-                        break
-                    end
-                end
-            end
-            for _,conn in ipairs(getconnections(LocalPlayer:GetAttributeChangedSignal("BackpackEnabled"))) do
-                if conn.Function then
-                    pcall(function()
-                        pl.SwitchUpdate = debug.getupvalue(debug.getupvalue(conn.Function, 10), 5)
-                        pl.SwitchTable  = debug.getupvalue(debug.getupvalue(conn.Function, 8), 2)
-                    end)
-                    break
-                end
-            end
-        end
-    end
-
-    for _=1,40 do
-        getShootFunction()
-        if pl.Bullet then break end
-        task.wait(0.5)
-    end
-
-    if pl.GunTracers then
-        local oldBullet, oldTaser, oldSniper
-        local function hookAll()
-            local function makeHook(orig)
-                return function(...)
-                    for _,v in ipairs(TracerHook.Hooks) do
-                        if v[2](...) then return end
-                    end
-                    return orig(...)
-                end
-            end
-            if pl.GunTracers.createBullet and hookfunction then
-                oldBullet  = hookfunction(pl.GunTracers.createBullet,  makeHook(pl.GunTracers.createBullet))
-                pcall(function() oldTaser  = hookfunction(pl.GunTracers.createTaser,  makeHook(pl.GunTracers.createTaser)) end)
-                pcall(function() oldSniper = hookfunction(pl.GunTracers.createSniper, makeHook(pl.GunTracers.createSniper)) end)
-            end
-        end
-        function TracerHook:Add(key, fn, priority)
-            table.insert(self.Hooks, {key, fn, priority or 0})
-            table.sort(self.Hooks, function(a,b) return a[3]<b[3] end)
-            if not oldBullet then hookAll() end
-        end
-        function TracerHook:Remove(key)
-            for i,v in ipairs(self.Hooks) do
-                if v[1]==key then table.remove(self.Hooks,i); break end
-            end
-            if oldBullet and not next(self.Hooks) then
-                if restorefunction then
-                    pcall(restorefunction, pl.GunTracers.createBullet)
-                    pcall(restorefunction, pl.GunTracers.createTaser)
-                    pcall(restorefunction, pl.GunTracers.createSniper)
-                else
-                    pcall(hookfunction, pl.GunTracers.createBullet, oldBullet)
-                    pcall(hookfunction, pl.GunTracers.createTaser,  oldTaser)
-                    pcall(hookfunction, pl.GunTracers.createSniper, oldSniper)
-                end
-                oldBullet=nil; oldTaser=nil; oldSniper=nil
-            end
-        end
-    end
-
-    plReady = true
-end)
-
--- ============================================================
--- ANTI-INVISIBLE
--- ============================================================
-
-local antiInvisWhitelist = {
-    ['http://www.roblox.com/asset/?id=125750702']=true,['http://www.roblox.com/asset/?id=128777973']=true,
-    ['http://www.roblox.com/asset/?id=128853357']=true,['http://www.roblox.com/asset/?id=129423030']=true,
-    ['http://www.roblox.com/asset/?id=129423131']=true,['http://www.roblox.com/asset/?id=129967390']=true,
-    ['http://www.roblox.com/asset/?id=129967478']=true,['http://www.roblox.com/asset/?id=178130996']=true,
-    ['http://www.roblox.com/asset/?id=180426354']=true,['http://www.roblox.com/asset/?id=180435571']=true,
-    ['http://www.roblox.com/asset/?id=180435792']=true,['http://www.roblox.com/asset/?id=180436148']=true,
-    ['http://www.roblox.com/asset/?id=180436334']=true,['http://www.roblox.com/asset/?id=182393478']=true,
-    ['http://www.roblox.com/asset/?id=182435998']=true,['http://www.roblox.com/asset/?id=182436842']=true,
-    ['http://www.roblox.com/asset/?id=182436935']=true,['http://www.roblox.com/asset/?id=182491037']=true,
-    ['http://www.roblox.com/asset/?id=182491065']=true,['http://www.roblox.com/asset/?id=182491248']=true,
-    ['http://www.roblox.com/asset/?id=182491277']=true,['http://www.roblox.com/asset/?id=182491368']=true,
-    ['http://www.roblox.com/asset/?id=182491423']=true,
-    ['rbxassetid://279227693']=true,['rbxassetid://279229192']=true,['rbxassetid://287112271']=true,
-    ['rbxassetid://388723916']=true,['rbxassetid://388726667']=true,['rbxassetid://389472570']=true,
-    ['rbxassetid://405194080']=true,['rbxassetid://405212265']=true,['rbxassetid://481088553']=true,
-    ['rbxassetid://481089053']=true,['rbxassetid://484200742']=true,['rbxassetid://484926359']=true,
-    ['rbxassetid://83690472549256']=true,['rbxassetid://107176344504758']=true,
-    ['rbxassetid://111090572475133']=true,['rbxassetid://113267949064300']=true,
-    ['rbxassetid://131326339350805']=true,
-}
-pcall(function()
-    for _,v in ipairs(RS:GetDescendants()) do
-        if v:IsA("Animation") then antiInvisWhitelist[v.AnimationId]=true end
-    end
-end)
-
-local antiInvisThreads = {}
-local antiInvisConns = {}
-
-local function antiInvisAnimAdded(anim, plr)
-    if not antiInvisWhitelist[anim.Animation.AnimationId] and plr then
-        if antiInvisThreads[anim] then task.cancel(antiInvisThreads[anim]) end
-        antiInvisThreads[anim] = task.spawn(function()
-            repeat
-                pcall(function() anim:AdjustWeight(0, 0) end)
-                task.wait()
-            until not (anim.IsPlaying and F.VapeM.AntiInvisible)
-            antiInvisThreads[anim] = nil
-        end)
-    end
-end
-
-local function hookAntiInvisPlayer(p)
-    local c = p.Character
-    if not c then return end
-    local animator = c:FindFirstChildOfClass("Animator") or c:WaitForChild("Animator", 3)
-    if not animator then return end
-    local ac = animator.AnimationPlayed:Connect(function(anim) antiInvisAnimAdded(anim, p) end)
-    antiInvisConns[#antiInvisConns+1] = ac
-    for _,anim in ipairs(animator:GetPlayingAnimationTracks()) do
-        task.spawn(antiInvisAnimAdded, anim, p)
-    end
-end
-
-local function startAntiInvisible()
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then task.spawn(hookAntiInvisPlayer, p) end
-    end
-    antiInvisConns[#antiInvisConns+1] = Players.PlayerAdded:Connect(function(p)
-        p.CharacterAdded:Connect(function()
-            if not F.VapeM.AntiInvisible then return end
-            task.spawn(hookAntiInvisPlayer, p)
-        end)
-    end)
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            antiInvisConns[#antiInvisConns+1] = p.CharacterAdded:Connect(function()
-                if not F.VapeM.AntiInvisible then return end
-                task.spawn(hookAntiInvisPlayer, p)
-            end)
-        end
-    end
-end
-
-local function stopAntiInvisible()
-    for _,c in ipairs(antiInvisConns) do pcall(function() c:Disconnect() end) end
-    antiInvisConns = {}
-    for _,t in pairs(antiInvisThreads) do pcall(function() task.cancel(t) end) end
-    antiInvisThreads = {}
-end
-
--- ============================================================
--- SILENT AIM
--- ============================================================
-
-local silentAimOld = nil
-local function startSilentAim()
-    if not (pl.Bullet and hookfunction) then return end
-    if silentAimOld then return end
-    local rand = Random.new()
-    silentAimOld = hookfunction(pl.Bullet, function(origin, direction, ...)
-        if rand:NextNumber(0,100) > F.VapeM.SilentAimHitChance then return silentAimOld(origin, direction, ...) end
-        local targetPart = rand:NextNumber(0,100) < F.VapeM.SilentAimHeadshotChance and "Head" or "HumanoidRootPart"
-        local best, bestDist = nil, math.huge
-        local r = root()
-        if not r then return silentAimOld(origin, direction, ...) end
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and isEnemy(p) then
-                local ok,c,h = alive(p); if not ok then continue end
-                local part = c:FindFirstChild(targetPart) or c:FindFirstChild("HumanoidRootPart")
-                if part then
-                    local d = (part.Position - r.Position).Magnitude
-                    if d <= F.VapeM.SilentAimRange and d < bestDist then
-                        if not F.VapeM.SilentAimWallbang then
-                            local rp = RaycastParams.new()
-                            rp.FilterDescendantsInstances = {char(), c}
-                            rp.FilterType = Enum.RaycastFilterType.Exclude
-                            local ray = Workspace:Raycast(origin, part.Position - origin, rp)
-                            if ray and not ray.Instance:IsDescendantOf(c) then continue end
-                        end
-                        best = part; bestDist = d
-                    end
-                end
-            end
-        end
-        if best then
-            return silentAimOld(origin, best.Position, ...)
-        end
-        return silentAimOld(origin, direction, ...)
-    end)
-end
-
-local function stopSilentAim()
-    if silentAimOld and pl.Bullet and hookfunction then
-        pcall(function()
-            if restorefunction then restorefunction(pl.Bullet)
-            else hookfunction(pl.Bullet, silentAimOld) end
-        end)
-        silentAimOld = nil
-    end
-end
-
--- ============================================================
--- BULLET TRACERS
--- ============================================================
-
-local tracerDrawObjs = {}
-local function startBulletTracers()
-    TracerHook:Add("BulletTracers", function(origin, dir)
-        local obj = Drawing.new("Line")
-        obj.Thickness = 2
-        obj.Color = Color3.fromRGB(255, 95, 50)
-        obj.Transparency = 0.5
-        tracerDrawObjs[obj] = {origin, origin + (dir and dir.Unit * 1000 or Vector3.new(0,0,1000)), os.clock()}
-        task.delay(0.2, function()
-            tracerDrawObjs[obj] = nil
-            obj.Visible = false; pcall(function() obj:Remove() end)
-        end)
-        return false
-    end, 1)
-    vapeClean(RunService.RenderStepped:Connect(function()
-        for obj, data in pairs(tracerDrawObjs) do
-            local from = cam():WorldToViewportPoint(data[1])
-            local to   = cam():WorldToViewportPoint(data[2])
-            if from.Z > 0 and to.Z > 0 then
-                obj.Visible = true
-                obj.From = Vector2.new(from.X, from.Y)
-                obj.To   = Vector2.new(to.X,   to.Y)
-                local age = (os.clock() - data[3]) / 0.2
-                obj.Transparency = 0.5 * (1 - math.clamp(age, 0, 1))
-            else
-                obj.Visible = false
-            end
-        end
-    end))
-end
-
-local function stopBulletTracers()
-    TracerHook:Remove("BulletTracers")
-    for obj in pairs(tracerDrawObjs) do
-        pcall(function() obj.Visible=false; obj:Remove() end)
-    end
-    tracerDrawObjs = {}
-end
-
--- ============================================================
--- DAMAGE INDICATOR
--- ============================================================
-
-local diIndi, diIndiPart, diIndiThread = nil, nil, nil
-local diTent, diTtimer, diThealth = nil, 0, 0
-
-local function diCreateIndicator(damage, pos)
-    if diIndiThread then
-        task.cancel(diIndiThread); diIndiThread=nil
-        if diIndi then diIndi.Text = tostring(math.ceil(tonumber(diIndi.Text or "0") + damage)) end
-        if diIndiPart then diIndiPart.Position = pos end
-    else
-        diIndiPart = Instance.new("Part")
-        diIndiPart.Size = Vector3.zero; diIndiPart.Position = pos
-        diIndiPart.CanCollide=false; diIndiPart.CanQuery=false
-        diIndiPart.Anchored=true; diIndiPart.Parent=Workspace
-        local bb = Instance.new("BillboardGui")
-        bb.Adornee=diIndiPart; bb.Size=UDim2.new(15,250,15,250)
-        bb.AlwaysOnTop=true; bb.Parent=diIndiPart
-        diIndi = Instance.new("TextLabel")
-        diIndi.BackgroundTransparency=1; diIndi.TextStrokeTransparency=0
-        diIndi.Size=UDim2.fromScale(1,0.075)
-        diIndi.Position=UDim2.fromScale(0.5,0.5)
-        diIndi.AnchorPoint=Vector2.new(0.5,0.5)
-        diIndi.Text=tostring(math.ceil(damage))
-        diIndi.TextColor3=Color3.fromRGB(255,220,60)
-        diIndi.TextScaled=true; diIndi.Font=Enum.Font.GothamBlack
-        diIndi.Parent=bb
-    end
-    diIndiThread = task.spawn(function()
-        local sign = math.sign(math.random()-0.5)
-        local t0 = os.clock()
-        while true do
-            local pct = math.clamp((os.clock()-t0)/0.6, 0, 1)
-            if diIndi then
-                diIndi.Position = UDim2.new(0.5 + 0.125*pct*sign, 0, 0.5 - 0.15*pct, 0)
-                diIndi.TextTransparency = pct
-            end
-            if pct >= 1 then break end
-            RunService.RenderStepped:Wait()
-        end
-        if diIndiPart then pcall(function() diIndiPart:Destroy() end) end
-        diIndiPart=nil; diIndi=nil; diIndiThread=nil
-    end)
-end
-
-local function startDamageIndicator()
-    TracerHook:Add("DamageIndicator", function(...)
-        local ok, part = pcall(debug.getstack, 4, 17)
-        if ok and typeof(part)=="Instance" then
-            for _,ent in ipairs(getEntityList()) do
-                if part:IsDescendantOf(ent.Character) then
-                    if diTtimer <= os.clock() or ent.Player ~= diTent then
-                        diThealth = ent.Health
-                    end
-                    diTent = ent.Player; diTtimer = os.clock() + 0.5
-                    break
-                end
-            end
-        end
-        return false
-    end, 0)
-    vapeClean(RunService.Heartbeat:Connect(function()
-        if not (diTent and diTtimer > os.clock()) then return end
-        for _,ent in ipairs(getEntityList()) do
-            if ent.Player == diTent and diThealth > ent.Health then
-                local dmg = diThealth - ent.Health
-                local head = ent.Head
-                if head then diCreateIndicator(dmg, head.Position + Vector3.new(0,2,0)) end
-                diThealth = ent.Health
-            end
-        end
-    end))
-end
-
-local function stopDamageIndicator()
-    TracerHook:Remove("DamageIndicator")
-    if diIndiPart then pcall(function() diIndiPart:Destroy() end); diIndiPart=nil; diIndi=nil end
-    if diIndiThread then task.cancel(diIndiThread); diIndiThread=nil end
-end
-
--- ============================================================
--- HIT SOUND
--- ============================================================
-
-local hitSounds = {"rbxassetid://4849861756"}
-local function startHitSound()
-    TracerHook:Add("HitSound", function(...)
-        local ok, part = pcall(debug.getstack, 4, 17)
-        if ok and typeof(part)=="Instance" then
-            for _,ent in ipairs(getEntityList()) do
-                if part:IsDescendantOf(ent.Character) then
-                    if #hitSounds > 0 then
-                        local s = Instance.new("Sound")
-                        s.SoundId = hitSounds[math.random(1,#hitSounds)]
-                        s.PlayOnRemove = true; s.Volume = 0.8
-                        s.Parent = Workspace; s:Destroy()
-                    end
-                    break
-                end
-            end
-        end
-        return false
-    end, 0)
-end
-
-local function stopHitSound()
-    TracerHook:Remove("HitSound")
-end
-
--- ============================================================
--- KILL SOUND
--- ============================================================
-
-local killSounds = {"rbxassetid://4804978876"}
-local killSoundConn = nil
-local function startKillSound()
-    if killSoundConn then return end
-    local killfeed = RS:FindFirstChild("Killfeed")
-    if not killfeed then return end
-    killSoundConn = vapeClean(killfeed.ChildAdded:Connect(function(obj)
-        pcall(function()
-            local start = obj.Name:find("killed ")
-            if not start then return end
-            local s2 = start + 7
-            local e2 = obj.Name:find(" ", s2)
-            local victim = e2 and obj.Name:sub(s2, e2-1) or obj.Name:sub(s2)
-            if victim == LocalPlayer.Name and #killSounds > 0 then
-                local s = Instance.new("Sound")
-                s.SoundId = killSounds[math.random(1,#killSounds)]
-                s.PlayOnRemove = true; s.Volume = 0.8
-                s.Parent = Workspace; s:Destroy()
-            end
-        end)
-    end))
-end
-
-local function stopKillSound()
-    if killSoundConn then pcall(function() killSoundConn:Disconnect() end); killSoundConn=nil end
-end
-
--- ============================================================
--- VIEWMODEL
--- ============================================================
-
-local vmMoveSpring = Spring.new()
-local vmAimSpring  = Spring.new({Speed=15})
-local vmOldTool, vmClone, vmHandle = nil, nil, nil
-local vmShootTimer = os.clock()
-local vmAimTimer   = os.clock()
-local vmAimVec     = Vector3.new()
-local vmConn       = nil
-
-local function vmCleanup()
-    if vmOldTool then
-        for _,v in ipairs(vmOldTool:GetDescendants()) do
-            if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
-                pcall(function() v.LocalTransparencyModifier = 0 end)
-            end
-        end
-        vmOldTool = nil
-    end
-    if vmClone then pcall(function() vmClone:Destroy() end); vmClone=nil; vmHandle=nil end
-end
-
-local function vmToolAdded(tool)
-    if not (tool and tool:IsA("Tool")) then return end
-    vmCleanup()
-    vmOldTool = tool
-    vmClone = tool:Clone()
-    vmHandle = vmClone:FindFirstChild("Handle")
-    vmClone.Parent = cam()
-    for _,v in ipairs(vmClone:GetDescendants()) do
-        if v:IsA("BasePart") then v.CanCollide=false; v.Anchored=true end
-    end
-    for _,v in ipairs(tool:GetDescendants()) do
-        if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
-            pcall(function() v.LocalTransparencyModifier = 1 end)
-        end
-    end
-end
-
-local function startViewmodel()
-    local c = char()
-    if c then
-        local t = c:FindFirstChildWhichIsA("Tool")
-        if t then vmToolAdded(t) end
-        vapeClean(c.ChildAdded:Connect(vmToolAdded))
-        vapeClean(c.ChildRemoved:Connect(function(tool)
-            if tool == vmOldTool then vmCleanup() end
-        end))
-    end
-    vapeClean(Players.LocalPlayer.CharacterAdded:Connect(function(nc)
-        vmCleanup()
-        task.wait(0.5)
-        local t2 = nc:FindFirstChildWhichIsA("Tool")
-        if t2 then vmToolAdded(t2) end
-        vapeClean(nc.ChildAdded:Connect(vmToolAdded))
-        vapeClean(nc.ChildRemoved:Connect(function(tool)
-            if tool == vmOldTool then vmCleanup() end
-        end))
-    end))
-    TracerHook:Add("Viewmodel", function(...)
-        vmShootTimer = os.clock() + 0.3
-        return false
-    end, 0)
-    vmConn = vapeClean(RunService.RenderStepped:Connect(function(dt)
-        if not (vmHandle and vmHandle.Parent) then return end
-        local c2 = cam().CFrame
-        local r2 = root()
-        vmMoveSpring.Target = r2 and r2.AssemblyLinearVelocity * 0.005 or Vector3.new()
-        local cf = c2 * CFrame.new(0.4, -0.35, -1.2) + vmMoveSpring:Update(dt)
-        vmAimSpring.Target = vmAimTimer > os.clock() and CFrame.lookAt(cf.Position, vmAimVec).LookVector or c2.LookVector
-        local kick = math.max(vmShootTimer - os.clock(), 0)
-        vmHandle.CFrame = CFrame.lookAlong(cf.Position, vmAimSpring:Update(dt))
-            * CFrame.Angles(math.rad(kick * 10), 0, 0)
-            * CFrame.new(0, 0, kick)
-        vmHandle.AssemblyLinearVelocity = Vector3.zero
-    end))
-end
-
-local function stopViewmodel()
-    TracerHook:Remove("Viewmodel")
-    vmCleanup()
-end
-
--- ============================================================
--- AUTO HOTBAR
--- ============================================================
-
-local hotbarSortList = {
-    ["AK-47"]=1,["MP5"]=1,["M4A1"]=1,
-    ["Remington 870"]=2,["M700"]=2,
-    ["M9"]=3,["Revolver"]=3,
-    ["Taser"]=4
-}
-local hotbarConn = nil
-local function doHotbarSort()
-    if not (pl.SwitchTable and pl.SwitchUpdate) then return end
-    pcall(function()
-        table.sort(pl.SwitchTable, function(a,b)
-            local pa = (hotbarSortList[a.Tool and a.Tool.Name] or 999)
-            local pb = (hotbarSortList[b.Tool and b.Tool.Name] or 999)
-            if pa ~= pb then return pa < pb end
-            return (a.Slot or 0) < (b.Slot or 0)
-        end)
-        task.spawn(pl.SwitchUpdate)
-    end)
-end
-local function startAutoHotbar()
-    doHotbarSort()
-    local bp = LocalPlayer:FindFirstChildWhichIsA("Backpack")
-    if bp then
-        hotbarConn = vapeClean(bp.ChildAdded:Connect(function(tool)
-            if hotbarSortList[tool.Name] then task.defer(doHotbarSort) end
-        end))
-    end
-end
-local function stopAutoHotbar()
-    if hotbarConn then pcall(function() hotbarConn:Disconnect() end); hotbarConn=nil end
-end
-
--- ============================================================
--- AURA / ANTI / VEHICLE
--- ============================================================
-
-local antiFlingConn, antiFlingModified = nil, {}
-local function startAntiFling()
-    if not Workspace:FindFirstChild("CarContainer") then return end
-    local function Modify(part)
-        if part:IsA("BasePart") and part.CollisionGroup=="Vehicles" then
-            if not antiFlingModified[part] then antiFlingModified[part]=part.CanCollide end
-            part.CanCollide=false
-        end
-    end
-    antiFlingConn=vapeClean(Workspace.CarContainer.DescendantAdded:Connect(Modify))
-    for _,p in ipairs(Workspace.CarContainer:GetDescendants()) do pcall(Modify,p) end
-end
-local function stopAntiFling()
-    if antiFlingConn then pcall(function() antiFlingConn:Disconnect() end); antiFlingConn=nil end
-    for p,v in pairs(antiFlingModified) do pcall(function() p.CanCollide=v end) end
-    antiFlingModified={}
-end
-
-local antiKPConn=nil
-local function startAntiKillPlane()
-    antiKPConn=vapeClean(RunService.Heartbeat:Connect(function()
-        if isAlive() then
-            local r=getRoot(); if not r then return end
-            if r.Position.Y < -75 then
-                pcall(function()
-                    r.CFrame = CFrame.new(r.Position.X, 100, r.Position.Z)
-                    r.AssemblyLinearVelocity = Vector3.new(r.AssemblyLinearVelocity.X, 0, r.AssemblyLinearVelocity.Z)
-                end)
-            end
-        end
-    end))
-end
-local function stopAntiKillPlane()
-    if antiKPConn then pcall(function() antiKPConn:Disconnect() end); antiKPConn=nil end
-end
-
-local riotShieldThread=nil
-local function startAntiRiotShield()
-    riotShieldThread=vapeSpawn(function()
-        while F.VapeM.AntiRiotShield do
-            for _,ent in ipairs(getEntityList()) do
-                local shield=ent.Character:FindFirstChild("RiotShieldPart")
-                if shield then pcall(function() shield.CanQuery=false end) end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-local function stopAntiRiotShield()
-    for _,ent in ipairs(getEntityList()) do
-        local shield=ent.Character:FindFirstChild("RiotShieldPart")
-        if shield then pcall(function() shield.CanQuery=true end) end
-    end
-end
-
-local function applyFenceGodmode(on)
-    pcall(function()
-        if not Workspace:FindFirstChild("Prison_Fences") then return end
-        for _,fence in ipairs(Workspace.Prison_Fences:GetDescendants()) do
-            if fence:IsA("BasePart") and fence:FindFirstChildWhichIsA("TouchTransmitter") then
-                fence.CanTouch=not on
-            end
-        end
-    end)
-end
-
-local njcOld=nil
-local function startNoJumpCooldown()
-    local c=getChar(); if not c then return end
-    local h=c:FindFirstChildOfClass("Humanoid"); if not h then return end
-    if getconnections then
-        local conns2=getconnections(h:GetPropertyChangedSignal("Jump"))
-        if conns2 and conns2[1] then njcOld=conns2[1]; conns2[1]:Disable() end
-    end
-end
-local function stopNoJumpCooldown()
-    if njcOld then pcall(function() njcOld:Enable() end); njcOld=nil end
-end
-
-local vsThread=nil
-local vSeats={}
-local function startVehicleSpeed()
-    vsThread=vapeSpawn(function()
-        local oldSeat=nil
-        while F.VapeM.VehicleSpeed do
-            local h=hum()
-            local seat=h and h.SeatPart
-            if seat then
-                if seat~=oldSeat then
-                    vSeats={}
-                    if seat:IsDescendantOf(Workspace) then
-                        for _,v in ipairs(seat.Parent.Parent and seat.Parent.Parent:GetDescendants() or {}) do
-                            if v:IsA("VehicleSeat") then vSeats[#vSeats+1]=v end
-                        end
-                    end
-                    oldSeat=seat
-                end
-                for _,vs in ipairs(vSeats) do
-                    pcall(function() vs.MaxSpeed=F.VapeM.VehicleSpeedV; vs.Torque=4 end)
-                end
-            end
-            task.wait()
-        end
-        vSeats={}
-    end)
-end
-
-local function applyVehicleWallbang(on)
-    pcall(function()
-        if on and Workspace:FindFirstChild("CarContainer") then
-            for _,part in ipairs(Workspace.CarContainer:GetDescendants()) do
-                if part:IsA("BasePart") then part.CollisionGroup="Default" end
-            end
-        end
-    end)
-end
-
-local function findMeleeRemote()
-    local candidates = {
-        function() return RS:FindFirstChild("meleeEvent") end,
-        function() return RS.Remotes and RS.Remotes:FindFirstChild("MeleeHit") end,
-        function() return RS.Remotes and RS.Remotes:FindFirstChild("Melee") end,
-        function() for _,v in ipairs(RS:GetDescendants()) do if v:IsA("RemoteEvent") and v.Name:lower():find("melee") then return v end end end,
-    }
-    for _,fn in ipairs(candidates) do local ok,r = pcall(fn); if ok and r then return r end end
-    return nil
-end
-
-local killauraThread=nil
-local function startKillaura()
-    killauraThread=vapeSpawn(function()
-        while F.VapeM.Killaura do
-            if isAlive() then
-                local r=getRoot()
-                local selfpos=r and r.Position
-                if selfpos then
-                    local entities=getEntityList()
-                    local attacked=0
-                    local facing=r.CFrame.LookVector*Vector3.new(1,0,1)
-                    local meleeRemote = findMeleeRemote()
-                    for _,ent in ipairs(entities) do
-                        if not ent.Targetable then continue end
-                        local ep=ent.RootPart; if not ep then continue end
-                        local dist=(ep.Position-selfpos).Magnitude
-                        if dist>F.VapeM.KillauraRange then continue end
-                        local delta=(ep.Position-selfpos)
-                        local flatDelta = delta * Vector3.new(1,0,1)
-                        local angle = flatDelta.Magnitude > 0
-                            and math.acos(math.clamp(facing:Dot(flatDelta.Unit),-1,1)) or 0
-                        if angle>(math.rad(F.VapeM.KillauraAngle)/2) then continue end
-                        if attacked>=F.VapeM.KillauraMax then break end
-                        if meleeRemote then pcall(function() meleeRemote:FireServer(ent.Player,1,1) end) end
-                        attacked+=1
-                    end
-                end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local function findArrestRemote()
-    local candidates = {
-        function() return RS.Remotes and RS.Remotes:FindFirstChild("ArrestPlayer") end,
-        function() return RS.Remotes and RS.Remotes:FindFirstChild("Arrest") end,
-        function() for _,v in ipairs(RS:GetDescendants()) do if (v:IsA("RemoteFunction") or v:IsA("RemoteEvent")) and v.Name:lower():find("arrest") then return v end end end,
-    }
-    for _,fn in ipairs(candidates) do local ok,r = pcall(fn); if ok and r then return r end end
-    return nil
-end
-
-local autoArrestThread=nil
-local arrestCooldown=0
-local function startAutoArrest()
-    autoArrestThread=vapeSpawn(function()
-        while F.VapeM.AutoArrest do
-            if arrestCooldown<os.clock() and isAlive() then
-                local entities=getEntityList()
-                local r=getRoot()
-                if r then
-                    local arrestRemote = findArrestRemote()
-                    for _,ent in ipairs(entities) do
-                        local ep=ent.RootPart
-                        if ep and (ep.Position-r.Position).Magnitude<=F.VapeM.KillauraRange then
-                            if not ent.Character:GetAttribute("Arrested") then
-                                if arrestRemote then
-                                    pcall(function()
-                                        local ok
-                                        if arrestRemote:IsA("RemoteFunction") then
-                                            ok = arrestRemote:InvokeServer(ent.Player, 1)
-                                        else
-                                            arrestRemote:FireServer(ent.Player, 1); ok=true
-                                        end
-                                        if ok then
-                                            arrestCooldown=os.clock()+7
-                                            Notify("AutoArrest: Arrested "..ent.Player.Name, 5)
-                                        end
-                                    end)
-                                end
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local autoTazeThread=nil
-local tazeCooldown=0
-local function startAutoTaze()
-    autoTazeThread=vapeSpawn(function()
-        while F.VapeM.AutoTaze do
-            local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-            local taser=bp and bp:FindFirstChild("Taser")
-            if taser and (taser:GetAttribute("CurrentAmmo") or 1)>0 and tazeCooldown<os.clock() then
-                local ent=getClosestEntity(F.VapeM.KillauraRange,"Head",true)
-                if ent then
-                    if not (ent.Character:GetAttribute("Tased") or ent.Character:GetAttribute("Arrested")) then
-                        tazeCooldown=os.clock()+2
-                        local h=hum()
-                        if h then h:EquipTool(taser) end
-                    end
-                end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local autoResetConn=nil
-local function startAutoReset()
-    autoResetConn=vapeClean(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-        if LocalPlayer.Team and LocalPlayer.Team.Name:lower():find("crim") and isAlive() then
-            local h=hum()
-            if h then h:ChangeState(Enum.HumanoidStateType.Dead) end
-        end
-    end))
-end
-
-local autoReloadConn=nil
-local function startAutoReload()
-    task.spawn(function()
-        local gui2 = nil
-        for _=1,20 do
-            gui2 = LocalPlayer.PlayerGui:FindFirstChild("Home", true)
-            if gui2 then break end
-            task.wait(0.5)
-        end
-        if not gui2 then return end
-        local bulletsLabel = nil
-        for _=1,20 do
-            bulletsLabel = gui2:FindFirstChild("BulletsLabel", true)
-            if bulletsLabel then break end
-            task.wait(0.5)
-        end
-        if not bulletsLabel then return end
-        autoReloadConn=vapeClean(bulletsLabel:GetPropertyChangedSignal("Text"):Connect(function()
-            pcall(function()
-                local tool=char() and char():FindFirstChildWhichIsA("Tool")
-                if tool and (tool:GetAttribute("Local_CurrentAmmo") or 1)<=0 then
-                    pcall(function()
-                        if RS:FindFirstChild("GunRemotes") and RS.GunRemotes:FindFirstChild("Reload") then
-                            RS.GunRemotes.Reload:FireServer()
-                        end
-                    end)
-                    if F.VapeM.AutoReloadHotSwap then
-                        local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-                        if bp then
-                            for _,t in ipairs(bp:GetChildren()) do
-                                if t:IsA("Tool") and t:GetAttribute("FireRate") and t~=tool then
-                                    local h=hum()
-                                    if h then h:EquipTool(t) end
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end))
-    end)
-end
-
-local autoArmorThread=nil
-local function startAutoArmor()
-    autoArmorThread=vapeSpawn(function()
-        while F.VapeM.AutoArmor do
-            if isAlive() then
-                pcall(function()
-                    local r=getRoot()
-                    if not Workspace:FindFirstChild("Prison_ITEMS") then return end
-                    local clothes=Workspace.Prison_ITEMS:FindFirstChild("clothes")
-                    if not (r and clothes) then return end
-                    for _,pickup in ipairs(clothes:GetChildren()) do
-                        if (pickup:GetPivot().Position-r.Position).Magnitude<10 then
-                            local part=pickup:FindFirstChildWhichIsA("BasePart")
-                            if part and RS.Remotes:FindFirstChild("InteractWithItem") then
-                                RS.Remotes.InteractWithItem:InvokeServer(part)
-                            end
-                        end
-                    end
-                end)
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local autoHealThread=nil
-local healItems={Breakfast=true,Lunch=true,Dinner=true}
-local function startAutoHeal()
-    autoHealThread=vapeSpawn(function()
-        while F.VapeM.AutoHeal do
-            if isAlive() then
-                local h=hum()
-                if h and h.Health<=85 then
-                    local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-                    if bp then
-                        for _,tool in ipairs(bp:GetChildren()) do
-                            if healItems[tool.Name] then
-                                if (os.clock()-(tool:GetAttribute("Client_LastConsumedAt") or 0))>=3 then
-                                    pcall(function()
-                                        h:EquipTool(tool)
-                                        tool:SetAttribute("Client_LastConsumedAt", os.clock())
-                                        if RS.Remotes and RS.Remotes:FindFirstChild("EatFood") then
-                                            RS.Remotes.EatFood:FireServer()
-                                        end
-                                        Notify("AutoHeal: used "..tool.Name, 2)
-                                    end)
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local autoPickupThread=nil
-local function startAutoPickup()
-    autoPickupThread=vapeSpawn(function()
-        while F.VapeM.AutoPickup do
-            if isAlive() then
-                pcall(function()
-                    local r=getRoot(); if not r then return end
-                    local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack"); if not bp then return end
-                    for _,pickup in ipairs(Workspace:GetChildren()) do
-                        if pickup:IsA("Model") and pickup:GetAttribute("ToolName") then
-                            local pp=pickup.PrimaryPart or pickup:FindFirstChildWhichIsA("BasePart")
-                            if pp and (pp.Position-r.Position).Magnitude<12 then
-                                local toolname=pickup:GetAttribute("ToolName")
-                                if not bp:FindFirstChild(toolname) then
-                                    if GiverRemote then pcall(function() GiverRemote:FireServer(pickup) end) end
-                                end
-                            end
-                        end
-                    end
-                end)
-            end
-            task.wait(0.05)
-        end
-    end)
-end
-
-local cameraPhaseOld=nil
-local function startCameraPhase()
-    pcall(function()
-        local popper=require(LocalPlayer.PlayerScripts.PlayerModule.CameraModule.ZoomController.Popper)
-        cameraPhaseOld=debug.getupvalue(debug.getupvalue(popper,3),7)
-        debug.setconstant(cameraPhaseOld,16,0)
-    end)
-end
-local function stopCameraPhase()
-    if cameraPhaseOld then pcall(function() debug.setconstant(cameraPhaseOld,16,0.25) end); cameraPhaseOld=nil end
-end
-
-local killNotifConn=nil
-local function startKillNotifications()
-    local killfeed = RS:FindFirstChild("Killfeed")
-    if not killfeed then return end
-    killNotifConn=vapeClean(killfeed.ChildAdded:Connect(function(obj)
-        pcall(function()
-            local names={}
-            local start=obj.Name:find("@"); local endchar=obj.Name:find(")")
-            if start and endchar then table.insert(names,obj.Name:sub(start+1,endchar-1)) end
-            start=obj.Name:find("killed "); if start then
-                start=start+7
-                endchar=obj.Name:find(" ",start)
-                if endchar then table.insert(names,obj.Name:sub(start,endchar-1)) end
-            end
-            if #names>=2 and names[2]==LocalPlayer.Name and names[1]~=LocalPlayer.Name then
-                Notify("KillNotifications: "..names[1].." killed you!", 5)
-            end
-        end)
-    end))
-end
-
-local c4ESPHighlights={}
-local function startC4ESP()
-    for _,c4 in ipairs(CollectionService:GetTagged("C4")) do
-        pcall(function()
-            local hl=Instance.new("Highlight")
-            hl.Adornee=c4; hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-            hl.FillColor=Color3.fromRGB(255,100,0); hl.OutlineColor=Color3.fromRGB(255,255,0)
-            hl.FillTransparency=0.5; hl.Parent=(gethui and gethui()) or CoreGui
-            c4ESPHighlights[c4]=hl
-        end)
-    end
-    vapeClean(CollectionService:GetInstanceAddedSignal("C4"):Connect(function(c4)
-        pcall(function()
-            local hl=Instance.new("Highlight")
-            hl.Adornee=c4; hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-            hl.FillColor=Color3.fromRGB(255,100,0); hl.OutlineColor=Color3.fromRGB(255,255,0)
-            hl.FillTransparency=0.5; hl.Parent=(gethui and gethui()) or CoreGui
-            c4ESPHighlights[c4]=hl
-        end)
-    end))
-    vapeClean(CollectionService:GetInstanceRemovedSignal("C4"):Connect(function(c4)
-        if c4ESPHighlights[c4] then pcall(function() c4ESPHighlights[c4]:Destroy() end); c4ESPHighlights[c4]=nil end
-    end))
-end
-local function stopC4ESP()
-    for _,hl in pairs(c4ESPHighlights) do pcall(function() hl:Destroy() end) end; c4ESPHighlights={}
-end
-
-local autoDetThread=nil
-local function startAutoDetonate()
-    autoDetThread=vapeSpawn(function()
-        while F.VapeM.AutoDetonate do
-            pcall(function()
-                local myC4=nil
-                for _,c4 in ipairs(CollectionService:GetTagged("C4")) do
-                    if c4:GetAttribute("UserId")==LocalPlayer.UserId then myC4=c4; break end
-                end
-                if myC4 then
-                    local ent=getClosestEntity(25,"RootPart",true)
-                    if ent then
-                        local bp=LocalPlayer:FindFirstChildWhichIsA("Backpack")
-                        local tool=bp and bp:FindFirstChild("C4 Explosive")
-                        if tool then
-                            local h=hum()
-                            if h then h:EquipTool(tool) end
-                            pcall(function()
-                                if RS.Remotes and RS.Remotes:FindFirstChild("C4") then
-                                    RS.Remotes.C4.ActivateC4:InvokeServer()
-                                end
-                            end)
-                        end
-                    end
-                end
-            end)
-            task.wait(0.1)
-        end
-    end)
-end
-
-local disablerConn=nil
-local function startDisabler()
-    local function fix(c)
-        task.defer(function()
-            local head=c and c:FindFirstChild("Head")
-            if head and getconnections then
-                local cc=getconnections(head:GetPropertyChangedSignal("CanCollide"))
-                if cc and cc[1] then cc[1]:Disable() end
-            end
-        end)
-    end
-    disablerConn=vapeClean(LocalPlayer.CharacterAdded:Connect(fix))
-    if char() then fix(char()) end
-end
-local function stopDisabler() if disablerConn then pcall(function() disablerConn:Disconnect() end); disablerConn=nil end end
-
-local function applyGunMods()
-    pcall(function()
-        if not F.VapeM.GunMods then return end
-        for _,tool in ipairs(char() and char():GetChildren() or {}) do
-            if tool:IsA("Tool") and tool:GetAttribute("FireRate") then
-                if F.VapeM.GunModsNoSpread then tool:SetAttribute("SpreadRadius",0) end
-                if F.VapeM.GunModsAutomatic then tool:SetAttribute("AutoFire",true) end
-                if F.VapeM.GunModsFireRate<100 then
-                    local base=tool:GetAttribute("FireRate") or 0.1
-                    tool:SetAttribute("FireRate",base*(F.VapeM.GunModsFireRate/100))
-                end
-            end
-        end
-    end)
-end
-
-local cheatDetThread=nil
-local cheatFlags={}
-local function startCheatDetector()
-    cheatDetThread=vapeSpawn(function()
-        while F.VapeM.CheatDetector do
-            for _,ent in ipairs(getEntityList()) do
-                pcall(function()
-                    local velo=ent.RootPart.AssemblyLinearVelocity
-                    if not ent.Humanoid.SeatPart then
-                        if (velo*Vector3.new(1,0,1)).Magnitude>26 then
-                            local uid=ent.Player.UserId
-                            cheatFlags[uid]=(cheatFlags[uid] or 0)+1
-                            if cheatFlags[uid]==5 then
-                                Notify("CheatDetector: "..ent.Player.Name.." may be speed hacking!", 8)
-                            end
-                        end
-                    end
-                end)
-            end
-            task.wait(0.1)
-        end
-        cheatFlags={}
-    end)
-end
-
--- ============================================================
--- UI SYSTEM
--- ============================================================
 
 local T={
     bg=Color3.fromRGB(22,22,25),title=Color3.fromRGB(16,16,19),panel=Color3.fromRGB(29,29,33),
@@ -1752,7 +1006,7 @@ local function setAccent(col)
     if fovCircle then pcall(function() fovCircle.Color=col end) end
 end
 
-local gui=make("ScreenGui",{Name="vapehub_"..tostring(math.random(1e5,1e6)),ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},(gethui and gethui()) or CoreGui)
+local gui=make("ScreenGui",{Name="syntax_"..tostring(math.random(1e5,1e6)),ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},(gethui and gethui()) or CoreGui)
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
 
 local WIN_W,WIN_H=640,520
@@ -1779,8 +1033,8 @@ for i=1,22 do
 end
 
 local titleBar=make("Frame",{Size=UDim2.new(1,0,0,34),BackgroundColor3=T.title,BorderSizePixel=0},win)
-make("TextLabel",{Size=UDim2.fromOffset(200,34),Position=UDim2.fromOffset(12,0),BackgroundTransparency=1,Font=BOLD,Text="Vape Hub V2",TextColor3=T.text,TextXAlignment=Enum.TextXAlignment.Left,TextSize=16},titleBar)
-make("TextLabel",{Size=UDim2.fromOffset(200,34),Position=UDim2.fromOffset(122,1),BackgroundTransparency=1,Font=FONT,Text="·  V2",TextColor3=T.sub,TextXAlignment=Enum.TextXAlignment.Left,TextSize=12},titleBar)
+make("TextLabel",{Size=UDim2.fromOffset(160,34),Position=UDim2.fromOffset(12,0),BackgroundTransparency=1,Font=BOLD,Text="syntax",TextColor3=T.text,TextXAlignment=Enum.TextXAlignment.Left,TextSize=16},titleBar)
+make("TextLabel",{Size=UDim2.fromOffset(160,34),Position=UDim2.fromOffset(78,1),BackgroundTransparency=1,Font=FONT,Text="·  v8.0  <3",TextColor3=T.sub,TextXAlignment=Enum.TextXAlignment.Left,TextSize=12},titleBar)
 local closeB=make("TextButton",{Size=UDim2.fromOffset(26,20),Position=UDim2.new(1,-32,0,7),BackgroundColor3=T.item,BorderSizePixel=0,AutoButtonColor=false,Font=FONT,Text="X",TextColor3=T.sub,TextSize=12},titleBar); corner(closeB,4)
 local minB=make("TextButton",{Size=UDim2.fromOffset(26,20),Position=UDim2.new(1,-62,0,7),BackgroundColor3=T.item,BorderSizePixel=0,AutoButtonColor=false,Font=FONT,Text="—",TextColor3=T.sub,TextSize=12},titleBar); corner(minB,4)
 closeB.MouseEnter:Connect(function() tw(closeB,0.12,{BackgroundColor3=Color3.fromRGB(180,55,55)}) end)
@@ -1918,9 +1172,7 @@ end)
 local footer=make("Frame",{Size=UDim2.new(1,0,0,34),Position=UDim2.new(0,0,1,-34),BackgroundColor3=T.title,BorderSizePixel=0},win)
 make("Frame",{Size=UDim2.new(1,0,0,1),BackgroundColor3=T.line,BorderSizePixel=0},footer)
 local dot=make("Frame",{Size=UDim2.fromOffset(8,8),Position=UDim2.fromOffset(16,13),BackgroundColor3=T.green,BorderSizePixel=0},footer); corner(dot,4)
-make("TextLabel",{Size=UDim2.new(1,-24,1,0),Position=UDim2.fromOffset(32,0),BackgroundTransparency=1,Font=FONT,Text=LocalPlayer.Name.."   ·   Prison Life   ·   Vape Hub V2",TextColor3=T.sub,TextXAlignment=Enum.TextXAlignment.Left,TextSize=12},footer)
-
--- TABS
+make("TextLabel",{Size=UDim2.new(1,-24,1,0),Position=UDim2.fromOffset(32,0),BackgroundTransparency=1,Font=FONT,Text=LocalPlayer.Name.."   ·   Prison Life   ·   v8.0",TextColor3=T.sub,TextXAlignment=Enum.TextXAlignment.Left,TextSize=12},footer)
 
 do
     local pg=addTab("Dashboard")
@@ -1945,11 +1197,14 @@ do
         {text="Speed  —  Detected",col=Color3.fromRGB(235,80,80),warn="    ↳  Keep under ~50 WalkSpeed"},
         {text="ESP  —  Undetected",col=Color3.fromRGB(90,210,140)},
         {text="Noclip  —  Undetected",col=Color3.fromRGB(90,210,140)},
-        {text="Killaura  —  Detectable (use carefully)",col=Color3.fromRGB(235,160,60)},
         {text="Silent Aim  —  Undetected",col=Color3.fromRGB(90,210,140)},
-        {text="VehicleFly  —  Undetected",col=Color3.fromRGB(90,210,140)},
-        {text="FenceGodmode  —  Undetected",col=Color3.fromRGB(90,210,140)},
-        {text="Anti-Taze  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Fast Guns  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Rage TP Kill  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Anti-Arrest  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Anti-Tase  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Killaura  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="TriggerBot  —  Undetected",col=Color3.fromRGB(90,210,140)},
+        {text="Auto Arrest  —  Undetected",col=Color3.fromRGB(90,210,140)},
     }
     for _,item in ipairs(detItems) do
         make("TextLabel",{Size=UDim2.new(1,0,0,14),BackgroundTransparency=1,Font=BOLD,Text=item.text,TextColor3=item.col,TextXAlignment=Enum.TextXAlignment.Left,TextSize=11,TextWrapped=true},sDetect)
@@ -1984,22 +1239,30 @@ do
     dropdown(sA,"Enemy mode",function() return ENEMY_MODES end,function() return ENEMY_MODES[enemyMode] end,function(opt) for i,v in ipairs(ENEMY_MODES) do if v==opt then enemyMode=i end end end)
     dropdown(sA,"Target part",function() return {"Head","Torso"} end,function() return F.Aim.Part end,function(opt) F.Aim.Part=opt end)
     toggle(sA,"Wall check",function() return F.Aim.WallCheck end,function(v) F.Aim.WallCheck=v end)
-    toggle(sA,"Silent aim",function() return F.VapeM.SilentAim end,function(v) F.VapeM.SilentAim=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startSilentAim() end) else stopSilentAim() end end)
-    toggle(sA,"Silent wallbang",function() return F.VapeM.SilentAimWallbang end,function(v) F.VapeM.SilentAimWallbang=v end)
-    toggle(sA,"Triggerbot",function() return F.Aim.Trigger end,function(v) F.Aim.Trigger=v end)
     toggle(sA,"Show FOV circle",function() return F.Aim.ShowFOV end,function(v) F.Aim.ShowFOV=v end)
     local sT=section(pg.right,"Tuning")
     slider(sT,"FOV (px)",30,400,function() return F.Aim.FOV end,function(v) F.Aim.FOV=v end)
     slider(sT,"Smoothness",0.05,1,function() return F.Aim.Smooth end,function(v) F.Aim.Smooth=v end)
     slider(sT,"Prediction",0,1,function() return F.Aim.Predict end,function(v) F.Aim.Predict=v end)
-    slider(sT,"Trigger delay (ms)",0,300,function() return F.Aim.TrigDelay end,function(v) F.Aim.TrigDelay=v end)
-    local sSA=section(pg.right,"Silent Aim Tuning")
-    slider(sSA,"Range (studs)",10,300,function() return F.VapeM.SilentAimRange end,function(v) F.VapeM.SilentAimRange=v end)
-    slider(sSA,"Hit chance %",0,100,function() return F.VapeM.SilentAimHitChance end,function(v) F.VapeM.SilentAimHitChance=v end)
-    slider(sSA,"Headshot chance %",0,100,function() return F.VapeM.SilentAimHeadshotChance end,function(v) F.VapeM.SilentAimHeadshotChance=v end)
+
+    local sSA=section(pg.left,"Silent Aim")
+    toggle(sSA,"Enabled",function() return F.Aim.Silent end,function(v) F.Aim.Silent=v end)
+    slider(sSA,"Hit chance",0,100,function() return F.Aim.HitChance end,function(v) F.Aim.HitChance=v end)
+    slider(sSA,"Headshot chance",0,100,function() return F.Aim.HeadshotChance end,function(v) F.Aim.HeadshotChance=v end)
+
+    local sTB=section(pg.right,"TriggerBot")
+    toggle(sTB,"Enabled",function() return F.TB.On end,function(v)
+        F.TB.On=v
+        if v then startTriggerBot() else stopTriggerBot() end
+    end)
+    toggle(sTB,"Vehicle wallbang",function() return F.VWB.On end,function(v) F.VWB.On=v end)
+
+    local sTrig=section(pg.right,"Triggerbot (legacy click)")
+    toggle(sTrig,"Triggerbot (click-fire)",function() return F.Aim.Trigger end,function(v) F.Aim.Trigger=v end)
+    slider(sTrig,"Trigger delay (ms)",0,300,function() return F.Aim.TrigDelay end,function(v) F.Aim.TrigDelay=v end)
 end
 
-local BONES={{" Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
+local BONES={{"Head","Torso"},{"Torso","Left Arm"},{"Torso","Right Arm"},{"Torso","Left Leg"},{"Torso","Right Leg"}}
 local ESP={}
 do
     local hasDraw=false
@@ -2135,6 +1398,16 @@ do
     button(sAc,"TP behind",function() local tr=tgtRoot(); if tr then tpMove(tr.CFrame*CFrame.new(0,0,3)) end end)
     button(sAc,"TP on top",function() local tr=tgtRoot(); if tr then tpMove(tr.CFrame*CFrame.new(0,4,0)) end end)
     toggle(sAc,"Follow target",function() return plFollow end,function(v) plFollow=v end)
+
+    local sKA=section(pg.left,"Killaura")
+    toggle(sKA,"Enabled",function() return F.KA.On end,function(v)
+        F.KA.On=v
+        if v then startKillaura() else stopKillaura() end
+    end)
+    slider(sKA,"Range (studs)",1,20,function() return F.KA.Range end,function(v) F.KA.Range=v end)
+    slider(sKA,"Max targets",1,10,function() return F.KA.MaxTargets end,function(v) F.KA.MaxTargets=math.floor(v) end)
+    slider(sKA,"Angle",1,360,function() return F.KA.Angle end,function(v) F.KA.Angle=v end)
+    toggle(sKA,"Require mouse down",function() return F.KA.RequireMouse end,function(v) F.KA.RequireMouse=v end)
 end
 
 do
@@ -2151,7 +1424,11 @@ do
     slider(sF,"Fly speed",0.5,10,function() return F.Mov.FlyV end,function(v) F.Mov.FlyV=v end)
     toggle(sF,"Fly noclip",function() return F.Mov.FlyNoclip end,function(v) F.Mov.FlyNoclip=v end)
     toggle(sF,"Noclip (standalone)",function() return F.Mov.Noclip end,function(v) F.Mov.Noclip=v; if v then applyNoclip() else stopNoclip() end end)
-    toggle(sF,"Snack noclip",function() return F.Mov.NcGlitch end,function(v) F.Mov.NcGlitch=v end)
+    toggle(sF,"Snack noclip",function() return F.Mov.NcGlitch end,function(v) F.Mov.NcGlitch=v; if not v and CharacterCollision then pcall(function() CharacterCollision.Enabled=true end) end end)
+    toggle(sF,"Disabler (fixes phase)",function() return F.DIS.On end,function(v)
+        F.DIS.On=v
+        if v then setupDisabler() else stopDisabler() end
+    end)
 
     local sV=section(pg.left,"Vehicle")
     toggle(sV,"Car Fly",function() return F.Mov.CarFly end,function(v) F.Mov.CarFly=v; setupCarFly() end)
@@ -2170,123 +1447,76 @@ end
 do
     local pg=addTab("Protection")
     local sP=section(pg.left,"Anti")
-    toggle(sP,"Anti-Arrest",function() return F.Prot.AntiArrest end,function(v) F.Prot.AntiArrest=v end)
-    toggle(sP,"Anti-Tase (syntax)",function() return F.Prot.AntiTase end,function(v) F.Prot.AntiTase=v end)
+    toggle(sP,"Anti-Arrest (die + stay criminal)",function() return F.Prot.AntiArrest end,function(v) F.Prot.AntiArrest=v end)
+    toggle(sP,"Anti-Tase (clear tase instantly)",function() return F.Prot.AntiTase end,function(v) F.Prot.AntiTase=v end)
+    toggle(sP,"Anti-Tase v2 (hook PlayerTased)",function() return F.AT.On end,function(v)
+        F.AT.On=v
+        setupAntiTaze()
+    end)
     toggle(sP,"Anti-Void",function() return F.Prot.AntiVoid end,function(v) F.Prot.AntiVoid=v end)
-    toggle(sP,"Keep reset enabled",function() return F.Prot.EnableReset end,function(v) F.Prot.EnableReset=v end)
-    local sF=section(pg.right,"Feed")
-    toggle(sF,"Kill feed notifications",function() return F.Feed.Kill end,function(v) F.Feed.Kill=v end)
-    toggle(sF,"Hostile / trespassing alerts",function() return F.Feed.Hostile end,function(v) F.Feed.Hostile=v end)
+    toggle(sP,"Keep reset button enabled",function() return F.Prot.EnableReset end,function(v) F.Prot.EnableReset=v end)
+
+    local sAA=section(pg.right,"Auto Arrest")
+    toggle(sAA,"Enabled",function() return F.AA.On end,function(v)
+        F.AA.On=v
+        if v then startAutoArrest() else stopAutoArrest() end
+    end)
+    slider(sAA,"Range (studs)",1,15,function() return F.AA.Range end,function(v) F.AA.Range=v end)
+    toggle(sAA,"Require handcuffs equipped",function() return F.AA.HandCheck end,function(v) F.AA.HandCheck=v end)
+    toggle(sAA,"Arrest Inmates",function() return F.AA.InmatesEnabled end,function(v) F.AA.InmatesEnabled=v end)
+    toggle(sAA,"Arrest Criminals",function() return F.AA.CriminalsEnabled end,function(v) F.AA.CriminalsEnabled=v end)
+
     local sEsc=section(pg.right,"Auto Escape")
     toggle(sEsc,"Auto Escape (≤30% HP → tree)",function() return F.Esc.AutoEscape end,function(v) F.Esc.AutoEscape=v; setupAutoEscape() end)
     button(sEsc,"Escape to tree now",TeleportToTree)
+
+    local sF=section(pg.left,"Feed")
+    toggle(sF,"Kill feed notifications",function() return F.Feed.Kill end,function(v) F.Feed.Kill=v end)
+    toggle(sF,"Hostile / trespassing alerts",function() return F.Feed.Hostile end,function(v) F.Feed.Hostile=v end)
 end
 
 do
     local pg=addTab("Automation")
     local sG=section(pg.left,"Guns")
-    toggle(sG,"Fast guns",function() return F.Auto.FastGuns end,function(v) F.Auto.FastGuns=v end)
+    toggle(sG,"Fast guns (hookmetamethod)",function() return F.Auto.FastGuns end,function(v) F.Auto.FastGuns=v end)
     slider(sG,"Fire rate override",0,100,function() return F.Auto.FireRate end,function(v) F.Auto.FireRate=v end)
     toggle(sG,"Auto guns on spawn",function() return F.Auto.Guns end,function(v) F.Auto.Guns=v end)
+
     local _selectedGun=nil
     dropdown(sG,"Gun",function() return allGuns end,function() return _selectedGun or "select" end,function(opt) _selectedGun=opt end)
+    button(sG,"Add/Remove from auto-gun list",function()
+        if not _selectedGun then return end
+        local idx=table.find(F.Auto.GunList,_selectedGun)
+        if idx then table.remove(F.Auto.GunList,idx); Notify("Removed "..(_selectedGun).." from list")
+        else table.insert(F.Auto.GunList,_selectedGun); Notify("Added ".._selectedGun.." to list") end
+    end)
     button(sG,"Get gun now",function()
         if not _selectedGun then return end
+        local r=root(); local save=r and r.CFrame
         GetGun(_selectedGun)
+        if r and save then r.CFrame=save end
     end)
     button(sG,"Get all accessible guns",function()
+        local r=root(); local save=r and r.CFrame
         for _,g in ipairs(allGuns) do if not GetTool(g) then GetGun(g) end; task.wait(0.3) end
+        if r and save then r.CFrame=save end
     end)
+
+    local sGM=section(pg.right,"Gun Modifications")
+    toggle(sGM,"Enabled",function() return F.GM.On end,function(v) F.GM.On=v end)
+    toggle(sGM,"No spread",function() return F.GM.NoSpread end,function(v) F.GM.NoSpread=v end)
+    toggle(sGM,"Full auto",function() return F.GM.FullAuto end,function(v) F.GM.FullAuto=v end)
+    slider(sGM,"Fire rate multiplier",1,100,function() return F.GM.FireRate end,function(v) F.GM.FireRate=v end)
+
     local sP=section(pg.right,"Prison")
-    toggle(sP,"Auto break toilets",function() return F.Auto.Toilets end,function(v) F.Auto.Toilets=v end)
+    toggle(sP,"Auto break toilets (needs hammer)",function() return F.Auto.Toilets end,function(v) F.Auto.Toilets=v end)
     toggle(sP,"Keycard grabber",function() return F.Auto.Keycard end,function(v) F.Auto.Keycard=v; if v then startKeycard() else _kcRunning=false end end)
     toggle(sP,"No-collision doors",function() return F.Auto.Doors end,function(v) F.Auto.Doors=v; if not v then AddDoors() end end)
     toggle(sP,"Transparent doors",function() return F.Auto.TDoors end,function(v) F.Auto.TDoors=v; if not v then TransparentDoors(false) end end)
     toggle(sP,"Auto anti-jump removal",function() return F.Auto.AJR end,function(v) F.Auto.AJR=v end)
-    toggle(sP,"Auto respawn",function() return F.Auto.AutoRespawn end,function(v) F.Auto.AutoRespawn=v end)
+    toggle(sP,"Auto respawn (respawn in place)",function() return F.Auto.AutoRespawn end,function(v) F.Auto.AutoRespawn=v end)
     toggle(sP,"Old gun sounds",function() return F.Auto.OldSounds end,function(v) F.Auto.OldSounds=v end)
-end
-
-do
-    local pg=addTab("Vape: Anti")
-    local sA=section(pg.left,"Anti-Grief")
-    toggle(sA,"AntiFling (vehicle collision)",function() return F.VapeM.AntiFling end,function(v) F.VapeM.AntiFling=v; if v then startAntiFling() else stopAntiFling() end end)
-    toggle(sA,"AntiKillPlane (floor lock)",function() return F.VapeM.AntiKillPlane end,function(v) F.VapeM.AntiKillPlane=v; if v then startAntiKillPlane() else stopAntiKillPlane() end end)
-    toggle(sA,"AntiRiotShield (bullet through shields)",function() return F.VapeM.AntiRiotShield end,function(v) F.VapeM.AntiRiotShield=v; if v then startAntiRiotShield() else stopAntiRiotShield() end end)
-    toggle(sA,"AntiInvisible (block custom anims)",function() return F.VapeM.AntiInvisible end,function(v) F.VapeM.AntiInvisible=v; if v then startAntiInvisible() else stopAntiInvisible() end end)
-    toggle(sA,"FenceGodmode (no fence damage)",function() return F.VapeM.FenceGodmode end,function(v) F.VapeM.FenceGodmode=v; applyFenceGodmode(v) end)
-    toggle(sA,"Disabler (head collision fix)",function() return F.VapeM.Disabler end,function(v) F.VapeM.Disabler=v; if v then startDisabler() else stopDisabler() end end)
-    toggle(sA,"NoJumpCooldown",function() return F.VapeM.NoJumpCooldown end,function(v) F.VapeM.NoJumpCooldown=v; if v then startNoJumpCooldown() else stopNoJumpCooldown() end end)
-
-    local sAT=section(pg.right,"Anti-Taze / Arrest")
-    toggle(sAT,"AntiTaze (hook tase event)",function() return F.VapeM.AntiTaze end,function(v) F.VapeM.AntiTaze=v end)
-    toggle(sAT,"AutoReset (die when criminal)",function() return F.VapeM.AutoReset end,function(v) F.VapeM.AutoReset=v; if v then startAutoReset() else if autoResetConn then pcall(function() autoResetConn:Disconnect() end); autoResetConn=nil end end end)
-end
-
-do
-    local pg=addTab("Vape: Combat")
-    local sK=section(pg.left,"Killaura")
-    toggle(sK,"Killaura",function() return F.VapeM.Killaura end,function(v) F.VapeM.Killaura=v; if v then startKillaura() end end)
-    slider(sK,"Range",1,12,function() return F.VapeM.KillauraRange end,function(v) F.VapeM.KillauraRange=v end)
-    slider(sK,"Angle",1,360,function() return F.VapeM.KillauraAngle end,function(v) F.VapeM.KillauraAngle=v end)
-    slider(sK,"Max targets",1,10,function() return F.VapeM.KillauraMax end,function(v) F.VapeM.KillauraMax=v end)
-
-    local sAA=section(pg.right,"Auto Actions")
-    toggle(sAA,"AutoArrest (handcuff nearby)",function() return F.VapeM.AutoArrest end,function(v) F.VapeM.AutoArrest=v; if v then startAutoArrest() end end)
-    toggle(sAA,"AutoTaze (tase nearby)",function() return F.VapeM.AutoTaze end,function(v) F.VapeM.AutoTaze=v; if v then startAutoTaze() end end)
-    toggle(sAA,"CheatDetector",function() return F.VapeM.CheatDetector end,function(v) F.VapeM.CheatDetector=v; if v then startCheatDetector() else cheatFlags={} end end)
-
-    local sGM=section(pg.left,"Gun Modifications")
-    toggle(sGM,"GunModifications",function() return F.VapeM.GunMods end,function(v) F.VapeM.GunMods=v; if v then applyGunMods() end end)
-    toggle(sGM,"No Spread",function() return F.VapeM.GunModsNoSpread end,function(v) F.VapeM.GunModsNoSpread=v end)
-    toggle(sGM,"Full Automatic",function() return F.VapeM.GunModsAutomatic end,function(v) F.VapeM.GunModsAutomatic=v end)
-    slider(sGM,"Fire Rate %",1,100,function() return F.VapeM.GunModsFireRate end,function(v) F.VapeM.GunModsFireRate=v end)
-end
-
-do
-    local pg=addTab("Vape: Vehicle")
-    local sVF=section(pg.left,"Vehicle Fly")
-    toggle(sVF,"VehicleFly",function() return F.VapeM.VehicleFly end,function(v) F.VapeM.VehicleFly=v end)
-    label(sVF,"E = up   Q = down   WASD = move")
-    slider(sVF,"CFrame Speed",1,100,function() return F.VapeM.VehicleFlySpeed end,function(v) F.VapeM.VehicleFlySpeed=v end)
-
-    local sVS=section(pg.right,"Vehicle Speed")
-    toggle(sVS,"VehicleSpeed",function() return F.VapeM.VehicleSpeed end,function(v) F.VapeM.VehicleSpeed=v; if v then startVehicleSpeed() end end)
-    slider(sVS,"Max Speed",80,200,function() return F.VapeM.VehicleSpeedV end,function(v) F.VapeM.VehicleSpeedV=v end)
-
-    local sVW=section(pg.left,"Wallbang")
-    toggle(sVW,"VehicleWallbang",function() return F.VapeM.VehicleWallbang end,function(v) F.VapeM.VehicleWallbang=v end)
-    label(sVW,"Shoot through vehicle hulls")
-end
-
-do
-    local pg=addTab("Vape: Inventory")
-    local sI=section(pg.left,"Auto Items")
-    toggle(sI,"AutoArmor (grab wall armor)",function() return F.VapeM.AutoArmor end,function(v) F.VapeM.AutoArmor=v; if v then startAutoArmor() end end)
-    toggle(sI,"AutoHeal (use food at 85 HP)",function() return F.VapeM.AutoHeal end,function(v) F.VapeM.AutoHeal=v; if v then startAutoHeal() end end)
-    toggle(sI,"AutoPickup (grab nearby drops)",function() return F.VapeM.AutoPickup end,function(v) F.VapeM.AutoPickup=v; if v then startAutoPickup() end end)
-    toggle(sI,"AutoHotbar (sort hotbar)",function() return F.VapeM.AutoHotbar end,function(v) F.VapeM.AutoHotbar=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startAutoHotbar() end) else stopAutoHotbar() end end)
-
-    local sR=section(pg.right,"Reload")
-    toggle(sR,"AutoReload",function() return F.VapeM.AutoReload end,function(v) F.VapeM.AutoReload=v; if v then startAutoReload() end end)
-    toggle(sR,"Auto Swap on reload",function() return F.VapeM.AutoReloadHotSwap end,function(v) F.VapeM.AutoReloadHotSwap=v end)
-end
-
-do
-    local pg=addTab("Vape: Utility")
-    local sU=section(pg.left,"Utility")
-    toggle(sU,"C4 ESP",function() return F.VapeM.C4ESP end,function(v) F.VapeM.C4ESP=v; if v then startC4ESP() else stopC4ESP() end end)
-    toggle(sU,"AutoDetonate (C4 near enemies)",function() return F.VapeM.AutoDetonate end,function(v) F.VapeM.AutoDetonate=v; if v then startAutoDetonate() end end)
-    toggle(sU,"CameraPhase (no wall clip)",function() return F.VapeM.CameraPhase end,function(v) F.VapeM.CameraPhase=v; if v then startCameraPhase() else stopCameraPhase() end end)
-    toggle(sU,"KillNotifications (who killed you)",function() return F.VapeM.KillNotifications end,function(v) F.VapeM.KillNotifications=v; if v then startKillNotifications() end end)
-    toggle(sU,"AutoToxic (taunt on kick)",function() return F.VapeM.AutoToxic end,function(v) F.VapeM.AutoToxic=v end)
-
-    local sL=section(pg.right,"Legit Modules")
-    toggle(sL,"BulletTracers",function() return F.VapeM.BulletTracers end,function(v) F.VapeM.BulletTracers=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startBulletTracers() end) else stopBulletTracers() end end)
-    toggle(sL,"DamageIndicator",function() return F.VapeM.DamageIndicator end,function(v) F.VapeM.DamageIndicator=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startDamageIndicator() end) else stopDamageIndicator() end end)
-    toggle(sL,"Viewmodel",function() return F.VapeM.Viewmodel end,function(v) F.VapeM.Viewmodel=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startViewmodel() end) else stopViewmodel() end end)
-    toggle(sL,"HitSound",function() return F.VapeM.HitSound end,function(v) F.VapeM.HitSound=v; if v then task.spawn(function() repeat task.wait(0.1) until plReady; startHitSound() end) else stopHitSound() end end)
-    toggle(sL,"KillSound",function() return F.VapeM.KillSound end,function(v) F.VapeM.KillSound=v; if v then startKillSound() else stopKillSound() end end)
+    toggle(sP,"Old gun sounds (self only)",function() return F.Auto.OldSoundsMe end,function(v) F.Auto.OldSoundsMe=v end)
 end
 
 do
@@ -2296,16 +1526,44 @@ do
     toggle(sL,"No fog",function() return F.Wld.NoFog end,function(v) F.Wld.NoFog=v; if v then Lighting.FogEnd=1e9 end end)
     toggle(sL,"Hide trees",function() return false end,function(v) hideTrees(v) end)
 
-    local sMap=section(pg.left,"Map")
+    local sMap=section(pg.left,"Map Destroy")
     label(sMap,"CLIENT-SIDE — rejoin to undo")
     button(sMap,"No-collision doors",NoDoors)
     button(sMap,"Transparent doors",function() TransparentDoors(true) end)
     button(sMap,"Destroy doors",DestroyDoors)
-    button(sMap,"Unkillable fence",UkFence)
+    button(sMap,"Unkillable fence (strip damage)",UkFence)
     button(sMap,"Destroy fences",DestroyFences)
     button(sMap,"Destroy gates",DestroyGates)
+    button(sMap,"Destroy team indicators",function() pcall(function() Workspace.TeamIndicators:Destroy() end) end)
     button(sMap,"Break all toilets",BreakAllToilets)
     button(sMap,"Remove jump cooldown",ajr)
+
+    local sIt=section(pg.right,"Item Grabber")
+    local itemMap={}
+    local function scanNames()
+        itemMap={}
+        for _,d in ipairs(Workspace:GetDescendants()) do
+            local tn=d:GetAttribute("ToolName")
+            if tn and not itemMap[tn] then
+                local part=d:IsA("BasePart") and d or d:FindFirstChildWhichIsA("BasePart",true)
+                if part then itemMap[tn]=part end
+            end
+        end
+        local ns={}; for n in pairs(itemMap) do ns[#ns+1]=n end; table.sort(ns); return ns
+    end
+    local selItem
+    dropdown(sIt,"Item",scanNames,function() return selItem or "scan first" end,function(opt) selItem=opt end)
+    button(sIt,"Scan items",function() scanNames(); Notify("Scanned "..tostring(#(function() local k=0; for _ in pairs(itemMap) do k+=1 end; return k end)()).." items") end)
+    button(sIt,"Grab selected",function()
+        if not selItem then return end
+        local part=itemMap[selItem]; local r=root(); if not (part and part.Parent and r) then return end
+        local save=r.CFrame
+        pcall(function() r.CFrame=CFrame.new(part.Position+Vector3.new(0,2.5,0)) end); task.wait(0.18)
+        pcall(function() if GiverRemote then GiverRemote:FireServer(part) end end)
+        pcall(function() if GiverRemote and part.Parent then GiverRemote:FireServer(part.Parent) end end)
+        pcall(function() if InteractItem then InteractItem:InvokeServer(part) end end)
+        task.wait(0.12); pcall(function() r.CFrame=save end)
+    end)
 
     local sSv=section(pg.right,"Server")
     toggle(sSv,"Anti-AFK",function() return F.Wld.AntiAFK end,function(v) F.Wld.AntiAFK=v end)
@@ -2350,12 +1608,14 @@ do
     button(sOuter,"Gas Station",function() tp(Vector3.new(-497,54,1686)) end)
     button(sOuter,"Lakeside Grocer",function() tp(Vector3.new(455,11,1222)) end)
     button(sOuter,"Roadend by Prison",function() tp(Vector3.new(1060,67,1847)) end)
+    button(sOuter,"Roadend by Warehouse",function() tp(Vector3.new(-979,54,1382)) end)
     button(sOuter,"Big Building Roof",function() tp(Vector3.new(-317,118,2009)) end)
     local sTrap=section(pg.right,"Traps")
     label(sTrap,"teleports enemies to enclosed spaces")
     button(sTrap,"Big Building Trap",function() tp(Vector3.new(-306,84,1984)) end)
     button(sTrap,"Inside Shops",function() tp(Vector3.new(-315,64,1840)) end)
     button(sTrap,"Other Warehouse",function() tp(Vector3.new(-943,94,1919)) end)
+
     local sWp=section(pg.left,"Waypoints")
     label(sWp,"T = click-TP to cursor")
     local wpCount=0
@@ -2410,10 +1670,8 @@ do
     label(sI,"T  —  click-TP to cursor")
     label(sI,"Fly:  WASD + Space / Ctrl")
     label(sI,"Car Fly:  get in a vehicle first")
-    label(sI,"VehicleFly:  E=up  Q=down")
     label(sI,"Aimbot:  auto-latch in Aimbot tab")
     label(sI,"Rage:  Combat tab → select → RAGE")
-    label(sI,"Killaura:  range & angle configurable")
     button(sI,"Unload",function() Hub._unload() end)
 end
 
@@ -2436,20 +1694,16 @@ pcall(function()
     fovCircle.Color=T.accent; fovCircle.Filled=false; fovCircle.Visible=false
 end)
 
-local vfUp,vfDown=0,0
-bind(UIS.InputBegan,function(i)
-    if not UIS:GetFocusedTextBox() then
-        if i.KeyCode==Enum.KeyCode.E then vfUp=1 elseif i.KeyCode==Enum.KeyCode.Q then vfDown=-1 end
-    end
+bind(UIS.InputBegan,function(i,gpe)
     if i.UserInputType==Enum.UserInputType.MouseButton2 then F.Aim.Held=true end
+    if gpe then return end
     if i.UserInputType==Enum.UserInputType.MouseButton1 then F.Aim.Fire=true end
     if i.KeyCode==Enum.KeyCode.RightShift then win.Visible=not win.Visible end
     if i.KeyCode==Enum.KeyCode.T then local m=LocalPlayer:GetMouse(); if m.Hit then tpMove(CFrame.new(m.Hit.Position+Vector3.new(0,3,0))) end end
     if F.Mov.InfJump and i.KeyCode==Enum.KeyCode.Space then local h=hum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end
-    if F.Mov.NcGlitch and i.KeyCode==Enum.KeyCode.Space then _ncLastJump=os.clock() end
+    if F.Mov.NcGlitch and i.KeyCode==Enum.KeyCode.Space then _ncLastJump=tick() end
 end)
 bind(UIS.InputEnded,function(i)
-    if i.KeyCode==Enum.KeyCode.E then vfUp=0 elseif i.KeyCode==Enum.KeyCode.Q then vfDown=0 end
     if i.UserInputType==Enum.UserInputType.MouseButton2 then F.Aim.Held=false end
     if i.UserInputType==Enum.UserInputType.MouseButton1 then F.Aim.Fire=false end
 end)
@@ -2471,7 +1725,7 @@ bind(RunService.Stepped,function()
     end
 end)
 
-bind(RunService.Heartbeat,function(dt)
+bind(RunService.Heartbeat,function()
     if F.Prot.AntiVoid then
         pcall(function()
             local r=root()
@@ -2481,13 +1735,15 @@ bind(RunService.Heartbeat,function(dt)
             end
         end)
     end
+
     if F.Prot.EnableReset then pcall(function() StarterGui:SetCore("ResetButtonCallback",true) end) end
+
     if F.Auto.Toilets then hammerCheck() end
     if F.Auto.Doors then NoDoors() end
     if F.Auto.TDoors then TransparentDoors(true) end
+
     if F.Auto.Guns and not _autoGunRunning and root() then
         if os.clock()-_autoGunLst >= AUTOGUN_DELAY then
-            _autoGunLst = os.clock()
             _autoGunRunning=true
             local r=root(); local save=r and r.CFrame
             task.spawn(function()
@@ -2499,35 +1755,10 @@ bind(RunService.Heartbeat,function(dt)
             end)
         end
     end
-
-    if F.VapeM.VehicleFly then
-        pcall(function()
-            local h=hum()
-            local seat=h and h.SeatPart
-            if seat then
-                local r=root()
-                if r then
-                    local c2=cam().CFrame
-                    local md=Vector3.zero
-                    if key(Enum.KeyCode.W) then md+=c2.LookVector end
-                    if key(Enum.KeyCode.S) then md-=c2.LookVector end
-                    if key(Enum.KeyCode.A) then md-=c2.RightVector end
-                    if key(Enum.KeyCode.D) then md+=c2.RightVector end
-                    md+=Vector3.new(0,vfUp+vfDown,0)
-                    if md.Magnitude>0 then
-                        local vehicle = seat:FindFirstAncestorWhichIsA("Model")
-                        local pp = vehicle and (vehicle.PrimaryPart or seat)
-                        if pp then pp.AssemblyLinearVelocity = md.Unit * F.VapeM.VehicleFlySpeed end
-                    end
-                end
-            end
-        end)
-    end
-
-    tickFakeFloor()
 end)
 
 local lastFire=0
+local lastDash=0
 local rgbHue=0
 
 bind(RunService.RenderStepped,function(dt)
@@ -2538,23 +1769,32 @@ bind(RunService.RenderStepped,function(dt)
             bx.f.Position=UDim2.fromOffset(bx.x,bx.y)
         end
     end
+
     if F.UI.RGB and win.Visible then rgbHue=(rgbHue+dt*0.14)%1; pcall(setAccent,Color3.fromHSV(rgbHue,0.72,1)) end
+
     pcall(ESP.render)
+
     if Hub._dashPage and Hub._dashPage.Visible and win.Visible and Hub._updateDash then
         pcall(Hub._updateDash)
     end
+
     if spectating then
         local st=spectateTarget; local tc=st and st.Character; local th=tc and tc:FindFirstChildOfClass("Humanoid")
         if th and th.Health>0 then pcall(function() cam().CameraSubject=th end) else stopSpectate() end
     end
     if not attached then if fovCircle then fovCircle.Visible=false end; return end
+
     local h,r=hum(),root()
+    if h then
+        if F.Mov.Speed then h.WalkSpeed=F.Mov.SpeedV end
+        if F.Mov.JumpOn then h.UseJumpPower=true; h.JumpPower=F.Mov.JumpV end
+    end
     if F.Mov.Fly and r then
-        local c2=cam().CFrame; local d=Vector3.zero
-        if key(Enum.KeyCode.W) then d+=c2.LookVector end
-        if key(Enum.KeyCode.S) then d-=c2.LookVector end
-        if key(Enum.KeyCode.A) then d-=c2.RightVector end
-        if key(Enum.KeyCode.D) then d+=c2.RightVector end
+        local c=cam().CFrame; local d=Vector3.zero
+        if key(Enum.KeyCode.W) then d+=c.LookVector end
+        if key(Enum.KeyCode.S) then d-=c.LookVector end
+        if key(Enum.KeyCode.A) then d-=c.RightVector end
+        if key(Enum.KeyCode.D) then d+=c.RightVector end
         if key(Enum.KeyCode.Space) then d+=Vector3.new(0,1,0) end
         if key(Enum.KeyCode.LeftControl) then d-=Vector3.new(0,1,0) end
         if d.Magnitude>0 then r.CFrame=r.CFrame+d.Unit*(F.Mov.FlyV*50)*dt end
@@ -2564,22 +1804,28 @@ bind(RunService.RenderStepped,function(dt)
             if ch then for _,v in ipairs(ch:GetDescendants()) do if v:IsA("BasePart") then pcall(function() v.CanCollide=false end) end end end
         end
     end
+
     if F.Wld.NoFog then Lighting.FogEnd=1e9 end
+
     if plFollow and Hub._tgtRoot then local rr=root(); local tr=Hub._tgtRoot(); if rr and tr then rr.CFrame=tr.CFrame*CFrame.new(0,0,3.5) end end
+
     if fovCircle then fovCircle.Visible=F.Aim.On and F.Aim.ShowFOV; fovCircle.Radius=F.Aim.FOV; fovCircle.Position=aimOrigin() end
+
     if F.Aim.On then
         local t=Aim.getTarget()
         if t then local aimPos=t.Position+t.AssemblyLinearVelocity*F.Aim.Predict
             local cf=cam().CFrame; cam().CFrame=cf:Lerp(CFrame.new(cf.Position,aimPos),1-F.Aim.Smooth) end
     end
+
     if F.Aim.Trigger and (os.clock()-lastFire)*1000>=F.Aim.TrigDelay then
         local t=Aim.getTarget(10,true); if t then lastFire=os.clock(); fireClick() end
     end
+
     if F.Mov.NcGlitch and isHoldingSnack() and not _ncCooldown then
         if CharacterCollision then pcall(function() CharacterCollision.Enabled=false end) end
-        local hh=hum()
-        if hh and hh.MoveDirection.Magnitude>0 then _ncLastMove=os.clock() end
-        if os.clock()-_ncLastMove<0.6 and os.clock()-_ncLastJump<0.6 then
+        local h=hum()
+        if h and h.MoveDirection.Magnitude>0 then _ncLastMove=tick() end
+        if tick()-_ncLastMove<0.6 and tick()-_ncLastJump<0.6 then
             _ncCooldown=true
             task.spawn(function()
                 local c=char()
@@ -2597,19 +1843,18 @@ end)
 function Hub._unload()
     attached=false
     for _,c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-    clearVapeConns(); killVapeThreads()
-    stopCarFly(); stopSpin(); stopAntiFling(); stopAntiKillPlane()
-    stopAntiRiotShield(); stopNoJumpCooldown(); stopCameraPhase()
-    stopC4ESP(); stopDisabler(); stopAntiInvisible()
-    stopSilentAim(); stopBulletTracers(); stopDamageIndicator()
-    stopHitSound(); stopKillSound(); stopViewmodel(); stopAutoHotbar()
+    stopCarFly(); stopSpin(); stopKillaura(); stopTriggerBot(); stopAutoArrest()
+    if _antiTazeOld and _antiTazeConn and _antiTazeConn.Function then
+        pcall(function() hookfunction(_antiTazeConn.Function, _antiTazeOld) end)
+    end
+    if healthConn then pcall(function() healthConn:Disconnect() end); healthConn=nil end
     pcall(clearNoclip); pcall(ESP.destroy); pcall(stopSpectate)
     if fovCircle then pcall(function() fovCircle:Remove() end) end
     pcall(function() fullbright(false) end)
     pcall(function() cam().FieldOfView=70 end)
     pcall(function() gui:Destroy() end)
     local hh=hum(); if hh then hh.WalkSpeed=16; hh.JumpPower=50 end
-    if getgenv then getgenv().vapehub=nil end
+    if getgenv then getgenv().syntax=nil end
 end
 
 Hub.Aim=Aim
@@ -2617,4 +1862,5 @@ Hub.Aim=Aim
 setupAutoEscape()
 if F.Auto.Keycard then startKeycard() end
 
-warn("Vape Hub V2")
+warn("[syntax] v8.0 loaded — Right Shift toggles UI · T = click-TP · Combat→RAGE · TriggerBot · Killaura · AutoArrest · AntiTaze v2 · Silent Aim upgraded"
+    ..(Hub._silentHook and "" or "   [note: silent aim unavailable — executor lacks hookmetamethod]"))
